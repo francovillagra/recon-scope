@@ -11,6 +11,7 @@ from app.models.base import Base
 if TYPE_CHECKING:
     from app.models.user import User
     from app.models.scan_job import ScanJob
+    from app.models.subdomain import Subdomain
 
 
 class Domain(Base):
@@ -73,5 +74,8 @@ class Domain(Base):
     # Relationships
     user: Mapped["User"] = relationship(back_populates="domains")
     scan_jobs: Mapped[list["ScanJob"]] = relationship(
+        back_populates="domain", cascade="all, delete-orphan"
+    )
+    subdomains: Mapped[list["Subdomain"]] = relationship(
         back_populates="domain", cascade="all, delete-orphan"
     )

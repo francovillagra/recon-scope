@@ -1,21 +1,37 @@
 """
-Phase 1 stub — scan job router.
+Phase 1 scan router.
 
-The only Phase 0 logic here is the P0001 handler: the DB trigger
-enforce_domain_verified raises ERRCODE P0001 when a scan_jobs INSERT
-references a domain whose verification_status != 'verified'.
-We convert that into a clean 422 so callers get a meaningful error
-instead of a raw 500.
+POST /scans   — create a scan_job for a verified domain, enqueue background task.
+GET  /scans   — list scan jobs for the authenticated user.
+GET  /scans/{job_id} — job status + subdomains when completed.
+
+The DB trigger enforce_domain_verified (migration 001) is the last-resort gate;
+the application layer checks verification_status first and returns a clean 422.
 """
+import uuid
 from typing import Annotated
 
 import sqlalchemy.exc
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_session
 from app.dependencies import get_current_user
+from app.models.audit_log import AuditLog
+from app.models.domain import Domain
+from app.models.scan_job import ScanJob
+from app.models.subdomain import Subdomain
 from app.models.user import User
+from app.schemas.scan import (
+    CreateScanRequest,
+    CreateScanResponse,
+    ScanDetailResponse,
+    ScanJobOut,
+    SubdomainOut,
+)
+from app.services.scan_runner import run_scan
 
 router = APIRouter(prefix="/scans", tags=["scans"])
 
@@ -23,24 +39,50 @@ AuthDep = Annotated[User, Depends(get_current_user)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+# ── POST /scans ───────────────────────────────────────────────────────────────
+
+@router.post("", response_model=CreateScanResponse, status_code=status.HTTP_201_CREATED)
 async def create_scan(
+    body: CreateScanRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
     current_user: AuthDep,
     session: SessionDep,
-) -> dict:
-    """
-    Phase 1 placeholder. Full implementation adds:
-      - CreateScanRequest body (domain_id, modules, config)
-      - ScanJob insert
-      - Job enqueue (BullMQ / Celery)
-    """
-    try:
-        # Phase 1: session.add(ScanJob(...)) goes here
+) -> CreateScanResponse:
+    # Validate domain ownership
+    domain = await session.get(Domain, body.domain_id)
+    if domain is None or domain.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")
+
+    # Application-level gate: must be verified before scanning
+    if domain.verification_status != "verified":
         raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="Scanning is not yet available (Phase 1)",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Domain not verified. Verify ownership before scanning.",
         )
+
+    job = ScanJob(
+        domain_id=domain.id,
+        user_id=current_user.id,
+        target=domain.domain,
+        config={"modules": body.modules},
+    )
+    session.add(job)
+
+    session.add(AuditLog(
+        user_id=current_user.id,
+        action="scan_started",
+        target=domain.domain,
+        ip_address=request.client.host if request.client else None,
+        metadata_={"modules": body.modules},
+    ))
+
+    try:
+        await session.flush()   # get job.id before the trigger fires
+        await session.commit()
+        await session.refresh(job)
     except sqlalchemy.exc.DBAPIError as e:
+        # DB-level safety net: enforce_domain_verified trigger (pgcode P0001)
         if getattr(e.orig, "pgcode", None) == "P0001":
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -48,24 +90,45 @@ async def create_scan(
             )
         raise
 
+    background_tasks.add_task(run_scan, job.id)
 
-@router.get("", status_code=status.HTTP_200_OK)
+    return CreateScanResponse(job_id=job.id, status="queued")
+
+
+# ── GET /scans ────────────────────────────────────────────────────────────────
+
+@router.get("", response_model=list[ScanJobOut])
 async def list_scans(
     current_user: AuthDep,
     session: SessionDep,
-) -> dict:
-    """Phase 1 placeholder."""
-    return {"scans": []}
+) -> list[ScanJobOut]:
+    rows = await session.scalars(
+        select(ScanJob)
+        .where(ScanJob.user_id == current_user.id)
+        .order_by(ScanJob.created_at.desc())
+    )
+    return [ScanJobOut.model_validate(j) for j in rows]
 
 
-@router.get("/{scan_id}", status_code=status.HTTP_200_OK)
+# ── GET /scans/{job_id} ───────────────────────────────────────────────────────
+
+@router.get("/{job_id}", response_model=ScanDetailResponse)
 async def get_scan(
-    scan_id: str,
+    job_id: uuid.UUID,
     current_user: AuthDep,
     session: SessionDep,
-) -> dict:
-    """Phase 1 placeholder."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Scanning is not yet available (Phase 1)",
-    )
+) -> ScanDetailResponse:
+    job = await session.get(ScanJob, job_id)
+    if job is None or job.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
+
+    subs: list[SubdomainOut] = []
+    if job.status == "completed":
+        rows = await session.scalars(
+            select(Subdomain)
+            .where(Subdomain.scan_job_id == job_id)
+            .order_by(Subdomain.hostname)
+        )
+        subs = [SubdomainOut.model_validate(s) for s in rows]
+
+    return ScanDetailResponse(job=ScanJobOut.model_validate(job), subdomains=subs)

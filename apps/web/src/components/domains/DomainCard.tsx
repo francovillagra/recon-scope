@@ -41,6 +41,14 @@ export function DomainCard({ domain, onDelete }: DomainCardProps) {
           </Link>
         )}
 
+        {domain.verification_status === 'verified' && (
+          <Link href={`/dashboard/domains/${domain.id}/scan`}>
+            <Button size="sm" variant="primary">
+              Run Recon
+            </Button>
+          </Link>
+        )}
+
         {onDelete && (
           <Button
             size="sm"

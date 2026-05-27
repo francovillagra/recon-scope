@@ -99,4 +99,46 @@ export const domains = {
     request<void>(`/api/v1/domains/${id}`, { method: 'DELETE' }),
 }
 
+// ── Scans ─────────────────────────────────────────────────────────────────────
+
+export interface SubdomainRow {
+  id: string
+  hostname: string
+  source: string
+  resolved_ip: string | null
+  created_at: string
+}
+
+export interface ScanJob {
+  id: string
+  domain_id: string
+  user_id: string
+  target: string
+  status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  config: Record<string, unknown>
+  error_message: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ScanDetail {
+  job: ScanJob
+  subdomains: SubdomainRow[]
+}
+
+export const scans = {
+  create: (domain_id: string, modules = ['subdomains']) =>
+    request<{ job_id: string; status: string }>('/api/v1/scans', {
+      method: 'POST',
+      body: JSON.stringify({ domain_id, modules }),
+    }),
+
+  list: () => request<ScanJob[]>('/api/v1/scans'),
+
+  get: (job_id: string) => request<ScanDetail>(`/api/v1/scans/${job_id}`),
+}
+
 export { ApiError }

@@ -1,0 +1,17 @@
+{
+  "name": "recon-platform",
+  "private": true,
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "type-check": "turbo run type-check",
+    "db:migrate": "node packages/db/scripts/migrate.js"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0",
+    "typescript": "^5.4.5",
+    "@types/node": "^20.14.0"
+  },
+  "packageManager": "pnpm@9.4.0"
+}

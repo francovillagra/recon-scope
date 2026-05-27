@@ -1,0 +1,86 @@
+version: "3.9"
+
+# ── Usage ─────────────────────────────────────────────────────────────────────
+#   cp .env.example .env          # fill in the blanks
+#   docker compose up --build     # first run (runs alembic migration automatically)
+#   docker compose up             # subsequent runs
+#
+# Ports:
+#   3000  → Next.js web dashboard
+#   8000  → FastAPI engine  (Swagger at /docs when DEBUG=true)
+#   5432  → Postgres (local dev only; use Supabase in production)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Local Postgres (dev only) ───────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-recon}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-recon}
+      POSTGRES_DB: ${POSTGRES_DB:-recon}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-recon}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Alembic migration (one-shot) ────────────────────────────────────────────
+  migrate:
+    build:
+      context: ../apps/engine
+    command: alembic upgrade head
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # ── FastAPI engine ──────────────────────────────────────────────────────────
+  engine:
+    build:
+      context: ../apps/engine
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_DAYS: ${JWT_EXPIRES_DAYS:-7}
+      BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
+      CORS_ORIGINS: '["http://localhost:3000"]'
+      DEBUG: ${DEBUG:-false}
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Next.js dashboard ──────────────────────────────────────────────────────
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      engine:
+        condition: service_healthy
+
+volumes:
+  pgdata:

@@ -1,0 +1,26 @@
+# Web framework
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+
+# Database — async SQLAlchemy + asyncpg driver
+sqlalchemy[asyncio]>=2.0.30
+asyncpg>=0.29.0
+
+# Migrations
+alembic>=1.13.0
+
+# Settings & validation
+pydantic>=2.7.0
+pydantic-settings>=2.3.0
+email-validator>=2.1.0   # required by Pydantic EmailStr
+
+# Auth
+PyJWT>=2.8.0
+passlib[bcrypt]>=1.7.4
+
+# Domain verification
+dnspython>=2.6.0
+httpx>=0.27.0
+
+# Required by uvicorn[standard] / starlette
+python-multipart>=0.0.9

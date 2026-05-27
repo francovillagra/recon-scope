@@ -17,14 +17,6 @@ class RegisterRequest(BaseModel):
             raise ValueError("Password must be at least 8 characters")
         return v
 
-    @field_validator("tos_accepted")
-    @classmethod
-    def tos_must_be_accepted(cls, v: bool) -> bool:
-        if not v:
-            raise ValueError("You must accept the Terms of Service to register")
-        return v
-
-
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str

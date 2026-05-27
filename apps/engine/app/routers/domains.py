@@ -14,6 +14,8 @@ from app.models.domain import Domain
 from app.models.user import User
 from app.schemas.domain import (
     CreateDomainRequest,
+    CreateDomainResponse,
+    DnsInstructions,
     DomainListResponse,
     DomainOut,
     DomainWithInstructions,
@@ -22,6 +24,7 @@ from app.schemas.domain import (
     VerifyDomainRequest,
     VerifyResponse,
     WellKnownFileInstructions,
+    WellKnownInstructions,
 )
 from app.services.domain_verification import verify_dns_txt, verify_well_known_file
 
@@ -93,13 +96,13 @@ async def list_domains(
 
 # ── POST /domains ─────────────────────────────────────────────────────────────
 
-@router.post("", response_model=DomainWithInstructions, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=CreateDomainResponse, status_code=status.HTTP_201_CREATED)
 async def create_domain(
     body: CreateDomainRequest,
     request: Request,
     current_user: AuthDep,
     session: SessionDep,
-) -> DomainWithInstructions:
+) -> CreateDomainResponse:
     token = f"recon-verify-{uuid.uuid4()}"
     domain = Domain(
         user_id=current_user.id,
@@ -122,9 +125,17 @@ async def create_domain(
             detail="Domain already registered for your account",
         )
 
-    return DomainWithInstructions(
-        domain=DomainOut.model_validate(domain),
-        instructions=_build_instructions(domain.domain, token),
+    return CreateDomainResponse(
+        domain_id=domain.id,
+        verification_token=token,
+        dns_instructions=DnsInstructions(
+            name=f"_recon-verify.{domain.domain}",
+            value=token,
+        ),
+        well_known_instructions=WellKnownInstructions(
+            url=f"https://{domain.domain}/.well-known/recon-verification.txt",
+            value=token,
+        ),
     )
 
 

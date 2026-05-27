@@ -68,6 +68,24 @@ class DomainWithInstructions(BaseModel):
     instructions: VerificationInstructions
 
 
+class DnsInstructions(BaseModel):
+    record_type: str = "TXT"
+    name: str
+    value: str
+
+
+class WellKnownInstructions(BaseModel):
+    url: str
+    value: str
+
+
+class CreateDomainResponse(BaseModel):
+    domain_id: uuid.UUID
+    verification_token: str
+    dns_instructions: DnsInstructions
+    well_known_instructions: WellKnownInstructions
+
+
 class DomainListResponse(BaseModel):
     domains: list[DomainOut]
 

@@ -26,6 +26,12 @@ async def register(
     body: RegisterRequest,
     session: AsyncSession = Depends(get_session),
 ) -> AuthResponse:
+    if not body.tos_accepted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Must accept Terms of Service",
+        )
+
     existing = await session.scalar(
         select(User).where(User.email == body.email.lower())
     )

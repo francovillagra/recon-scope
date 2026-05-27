@@ -109,6 +109,17 @@ export interface SubdomainRow {
   created_at: string
 }
 
+export interface PortRow {
+  id: string
+  host: string
+  port: number
+  protocol: string
+  state: string
+  service: string | null
+  banner: string | null
+  created_at: string
+}
+
 export interface ScanJob {
   id: string
   domain_id: string
@@ -127,13 +138,27 @@ export interface ScanJob {
 export interface ScanDetail {
   job: ScanJob
   subdomains: SubdomainRow[]
+  ports: PortRow[]
+}
+
+export interface ScanCreateOptions {
+  modules?: string[]
+  port_range?: 'top-100' | 'top-1000' | 'full'
+  passive_only?: boolean
+  timeout_seconds?: number
 }
 
 export const scans = {
-  create: (domain_id: string, modules = ['subdomains']) =>
+  create: (domain_id: string, opts: ScanCreateOptions = {}) =>
     request<{ job_id: string; status: string }>('/api/v1/scans', {
       method: 'POST',
-      body: JSON.stringify({ domain_id, modules }),
+      body: JSON.stringify({
+        domain_id,
+        modules: opts.modules ?? ['subdomains'],
+        port_range: opts.port_range ?? 'top-1000',
+        passive_only: opts.passive_only ?? true,
+        timeout_seconds: opts.timeout_seconds ?? 30,
+      }),
     }),
 
   list: () => request<ScanJob[]>('/api/v1/scans'),

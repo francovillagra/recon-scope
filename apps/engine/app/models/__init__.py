@@ -4,5 +4,6 @@ from app.models.domain import Domain
 from app.models.audit_log import AuditLog
 from app.models.scan_job import ScanJob
 from app.models.subdomain import Subdomain
+from app.models.port import Port
 
-__all__ = ["Base", "User", "Domain", "AuditLog", "ScanJob", "Subdomain"]
+__all__ = ["Base", "User", "Domain", "AuditLog", "ScanJob", "Subdomain", "Port"]

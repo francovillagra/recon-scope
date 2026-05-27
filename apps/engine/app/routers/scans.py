@@ -1,9 +1,9 @@
 """
-Phase 1 scan router.
+Scan router — Phase 1 + Phase 2.
 
 POST /scans   — create a scan_job for a verified domain, enqueue background task.
 GET  /scans   — list scan jobs for the authenticated user.
-GET  /scans/{job_id} — job status + subdomains when completed.
+GET  /scans/{job_id} — job status + subdomains + open ports when completed.
 
 The DB trigger enforce_domain_verified (migration 001) is the last-resort gate;
 the application layer checks verification_status first and returns a clean 422.
@@ -15,18 +15,19 @@ import sqlalchemy.exc
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.database import get_session
 from app.dependencies import get_current_user
 from app.models.audit_log import AuditLog
 from app.models.domain import Domain
+from app.models.port import Port
 from app.models.scan_job import ScanJob
 from app.models.subdomain import Subdomain
 from app.models.user import User
 from app.schemas.scan import (
     CreateScanRequest,
     CreateScanResponse,
+    PortOut,
     ScanDetailResponse,
     ScanJobOut,
     SubdomainOut,
@@ -61,11 +62,19 @@ async def create_scan(
             detail="Domain not verified. Verify ownership before scanning.",
         )
 
+    # Build the canonical config shape
+    config = {
+        "modules": body.modules,
+        "port_range": body.port_range,
+        "passive_only": body.passive_only,
+        "timeout_seconds": body.timeout_seconds,
+    }
+
     job = ScanJob(
         domain_id=domain.id,
         user_id=current_user.id,
         target=domain.domain,
-        config={"modules": body.modules},
+        config=config,
     )
     session.add(job)
 
@@ -78,7 +87,7 @@ async def create_scan(
     ))
 
     try:
-        await session.flush()   # get job.id before the trigger fires
+        await session.flush()
         await session.commit()
         await session.refresh(job)
     except sqlalchemy.exc.DBAPIError as e:
@@ -123,12 +132,25 @@ async def get_scan(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scan not found")
 
     subs: list[SubdomainOut] = []
+    ports: list[PortOut] = []
+
     if job.status == "completed":
-        rows = await session.scalars(
+        sub_rows = await session.scalars(
             select(Subdomain)
             .where(Subdomain.scan_job_id == job_id)
             .order_by(Subdomain.hostname)
         )
-        subs = [SubdomainOut.model_validate(s) for s in rows]
+        subs = [SubdomainOut.model_validate(s) for s in sub_rows]
 
-    return ScanDetailResponse(job=ScanJobOut.model_validate(job), subdomains=subs)
+        port_rows = await session.scalars(
+            select(Port)
+            .where(Port.scan_job_id == job_id, Port.state == "open")
+            .order_by(Port.host, Port.port)
+        )
+        ports = [PortOut.model_validate(p) for p in port_rows]
+
+    return ScanDetailResponse(
+        job=ScanJobOut.model_validate(job),
+        subdomains=subs,
+        ports=ports,
+    )

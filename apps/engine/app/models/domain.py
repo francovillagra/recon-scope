@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from app.models.user import User
     from app.models.scan_job import ScanJob
     from app.models.subdomain import Subdomain
+    from app.models.port import Port
 
 
 class Domain(Base):
@@ -77,5 +78,8 @@ class Domain(Base):
         back_populates="domain", cascade="all, delete-orphan"
     )
     subdomains: Mapped[list["Subdomain"]] = relationship(
+        back_populates="domain", cascade="all, delete-orphan"
+    )
+    ports: Mapped[list["Port"]] = relationship(
         back_populates="domain", cascade="all, delete-orphan"
     )

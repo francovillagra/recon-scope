@@ -4,24 +4,24 @@
 
 # recon-scope
 
-> Automated reconnaissance platform for authorized security assessments.
+> Plataforma de reconocimiento automatizado para assessments de seguridad autorizados.
 
 ---
 
-## Features
+## Funcionalidades
 
-- **Subdomain Enumeration** — passive recon via certificate transparency (crt.sh), async DNS resolution with asyncio + dnspython
-- **Port Scanning** — pure Python asyncio TCP connect scan, Semaphore(200), banner grabbing, static service inference. No nmap dependency.
-- **HTTP Fingerprinting** — headers, title parsing, tech stack detection (nginx, Cloudflare, Vercel, WordPress, Django, Laravel and more)
-- **TLS Analysis** — certificate validity, expiry, SAN, signature algorithm
-- **Findings Engine** — severity-ranked findings (critical/high/medium/low/info) with evidence. Rules: exposed DB ports, SSH exposure, invalid TLS, missing security headers, server version disclosure.
-- **Domain Ownership Verification** — DNS TXT or well-known file verification before any scan. No unauthorized scanning possible.
-- **Audit Log** — every action logged with user, target, IP, and timestamp.
-- **Export** — full scan report as JSON (API) or PDF (client-side, jsPDF).
+- **Enumeración de subdominios** — recon pasivo vía certificate transparency (crt.sh), resolución DNS asíncrona con asyncio + dnspython
+- **Escaneo de puertos** — TCP connect scan en Python puro con asyncio, Semaphore(200), banner grabbing e inferencia de servicios. Sin dependencia de nmap.
+- **HTTP Fingerprinting** — análisis de headers, parsing de título, detección de stack tecnológico (nginx, Cloudflare, Vercel, WordPress, Django, Laravel y más)
+- **Análisis TLS** — validez del certificado, expiración, SAN, algoritmo de firma
+- **Motor de findings** — hallazgos rankeados por severidad (critical/high/medium/low/info) con evidencia. Reglas: puertos DB expuestos, exposición SSH, TLS inválido, headers de seguridad faltantes, divulgación de versión de servidor.
+- **Verificación de propiedad de dominio** — verificación vía DNS TXT o archivo well-known antes de cualquier scan. Sin posibilidad de escanear targets no autorizados.
+- **Audit log** — cada acción registrada con usuario, target, IP y timestamp.
+- **Exportación** — reporte completo como JSON (API) o PDF (client-side, jsPDF).
 
 ---
 
-## Architecture
+## Arquitectura
 
 ```mermaid
 graph TB
@@ -67,136 +67,136 @@ graph TB
     style PG fill:#334155,color:#fff
 ```
 
-### Ownership verification gate
+### Gate de verificación de propiedad
 
 ```mermaid
 sequenceDiagram
-    actor User
+    actor Usuario
     participant Web
     participant API
-    participant DNS/File as DNS / .well-known
+    participant DNS/Archivo as DNS / .well-known
 
-    User->>Web: Enter domain name
+    Usuario->>Web: Ingresar dominio
     Web->>API: POST /api/v1/domains
     API-->>Web: { domain, instructions: { dns_txt, well_known_file } }
-    Web-->>User: Show verification instructions
+    Web-->>Usuario: Mostrar instrucciones de verificación
 
-    Note over User,DNS/File: User publishes DNS TXT record OR uploads file
+    Note over Usuario,DNS/Archivo: El usuario publica el TXT en DNS o sube el archivo
 
-    User->>Web: Click "Check"
+    Usuario->>Web: Click "Verificar"
     Web->>API: POST /api/v1/domains/:id/verify { method }
-    API->>DNS/File: Resolve TXT / fetch file
-    DNS/File-->>API: Record / file content
-    alt Token matches
+    API->>DNS/Archivo: Resolver TXT / fetch archivo
+    DNS/Archivo-->>API: Contenido del registro / archivo
+    alt Token coincide
         API-->>Web: { domain: { verification_status: "verified" } }
-        Web-->>User: Verified — ready to scan
-    else Token missing / mismatch
-        API-->>Web: 422 + instructions to retry
-        Web-->>User: Verification failed — try again
+        Web-->>Usuario: Verificado — listo para escanear
+    else Token faltante / no coincide
+        API-->>Web: 422 + instrucciones para reintentar
+        Web-->>Usuario: Verificación fallida — intentar de nuevo
     end
 ```
 
 ---
 
-## Tech Stack
+## Stack tecnológico
 
-| Layer | Technology |
+| Capa | Tecnología |
 |---|---|
 | Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS v3, Recharts |
 | Backend | FastAPI, Python 3.12, asyncio, SQLAlchemy 2 (async), Alembic |
-| Database | PostgreSQL 16, asyncpg |
-| Infrastructure | Docker, Docker Compose |
+| Base de datos | PostgreSQL 16, asyncpg |
+| Infraestructura | Docker, Docker Compose |
 
 ---
 
-## Security Design
+## Diseño de seguridad
 
-Domain ownership verification is mandatory before any scan can be initiated. Users must prove control of a domain by publishing a DNS TXT record at `_recon-verify.<domain>` or placing a token file at `/.well-known/recon-verification.txt`. This mirrors the approach used by Google Search Console and certificate authorities.
+La verificación de propiedad de dominio es obligatoria antes de iniciar cualquier scan. Los usuarios deben demostrar control del dominio publicando un registro DNS TXT en `_recon-verify.<dominio>` o colocando un archivo token en `/.well-known/recon-verification.txt`. Esto replica el enfoque utilizado por Google Search Console y las autoridades certificadoras.
 
-Authorization is enforced at the application level. Every database query filters by `user_id`. The FastAPI engine uses a service role key and is the sole trusted writer. All actions — domain registration, verification, scan start, scan completion, report generation — are written to a persistent `audit_log` table that survives domain or user deletion.
+La autorización se aplica a nivel de aplicación. Cada consulta a la base de datos filtra por `user_id`. El engine FastAPI es el único escritor de confianza. Todas las acciones — registro de dominio, verificación, inicio de scan, finalización de scan, generación de reporte — se escriben en una tabla `audit_log` persistente que sobrevive la eliminación del dominio o del usuario.
 
-Production deployments return no stack traces. All unhandled exceptions are caught by a global handler that logs internally and returns a generic 500 response. Rate limiting on `POST /scans` (10 requests/hour per user) prevents abuse.
+Los deployments en producción no devuelven stack traces. Todas las excepciones no manejadas son capturadas por un handler global que registra internamente y devuelve una respuesta 500 genérica. El rate limiting en `POST /scans` (10 requests/hora por usuario) previene abusos.
 
 ---
 
-## Quick Start
+## Inicio rápido
 
-### Prerequisites
+### Prerequisitos
 
 - Docker + Docker Compose
-- A `.env` file (copy `.env.example`)
+- Archivo `.env` (copiar `.env.example`)
 
-### 1. Configure environment
+### 1. Configurar entorno
 
 ```bash
 cp .env.example .env
-# Set JWT_SECRET to a strong random value:
+# Generar JWT_SECRET con un valor aleatorio fuerte:
 # python -c "import secrets; print(secrets.token_hex(64))"
 ```
 
-### 2. Start all services
+### 2. Levantar todos los servicios
 
 ```bash
 docker compose -f infra/docker-compose.yml up --build
 ```
 
-The engine container runs `alembic upgrade head` automatically before starting. No manual migration step needed.
+El contenedor del engine ejecuta `alembic upgrade head` automáticamente antes de iniciar. No se necesita ningún paso de migración manual.
 
-| Service | URL |
+| Servicio | URL |
 |---|---|
-| Web dashboard | http://localhost:3000 |
+| Dashboard web | http://localhost:3000 |
 | Engine API | http://localhost:8000 |
-| API docs (DEBUG=true only) | http://localhost:8000/docs |
+| Docs API (solo DEBUG=true) | http://localhost:8000/docs |
 | Health check | http://localhost:8000/api/v1/health |
 
-### Environment variables
+### Variables de entorno
 
-| Variable | Required | Default | Description |
+| Variable | Requerida | Default | Descripción |
 |---|---|---|---|
-| `DATABASE_URL` | Yes | — | `postgresql+asyncpg://...` connection string |
-| `JWT_SECRET` | Yes | — | HS256 signing key |
-| `JWT_EXPIRES_DAYS` | No | `7` | Token lifetime in days |
-| `BCRYPT_ROUNDS` | No | `12` | bcrypt work factor |
-| `CORS_ORIGINS` | No | `["http://localhost:3000"]` | JSON array of allowed origins |
-| `DEBUG` | No | `false` | Enables `/docs`, `/redoc`, verbose errors |
-| `NEXT_PUBLIC_API_URL` | Yes (web) | `http://localhost:8000` | Engine base URL visible to the browser |
+| `DATABASE_URL` | Sí | — | Connection string `postgresql+asyncpg://...` |
+| `JWT_SECRET` | Sí | — | Clave de firma HS256 |
+| `JWT_EXPIRES_DAYS` | No | `7` | Duración del token en días |
+| `BCRYPT_ROUNDS` | No | `12` | Factor de trabajo bcrypt |
+| `CORS_ORIGINS` | No | `["http://localhost:3000"]` | Array JSON de orígenes permitidos |
+| `DEBUG` | No | `false` | Habilita `/docs`, `/redoc` y errores detallados |
+| `NEXT_PUBLIC_API_URL` | Sí (web) | `http://localhost:8000` | URL base del engine visible desde el browser |
 
 ---
 
-## API Reference
+## Referencia de API
 
-All endpoints are prefixed with `/api/v1`. Authenticated endpoints require `Authorization: Bearer <token>`.
+Todos los endpoints tienen el prefijo `/api/v1`. Los endpoints autenticados requieren `Authorization: Bearer <token>`.
 
 ### Auth
 
-| Method | Path | Auth | Description |
+| Método | Path | Auth | Descripción |
 |---|---|---|---|
-| `POST` | `/auth/register` | — | Create account. Body: `{ email, password, tos_accepted: true }` |
-| `POST` | `/auth/login` | — | Obtain token. Body: `{ email, password }` |
+| `POST` | `/auth/register` | — | Crear cuenta. Body: `{ email, password, tos_accepted: true }` |
+| `POST` | `/auth/login` | — | Obtener token. Body: `{ email, password }` |
 
-Both return `{ token, user }`.
+Ambos devuelven `{ token, user }`.
 
-### Domains
+### Dominios
 
-| Method | Path | Auth | Description |
+| Método | Path | Auth | Descripción |
 |---|---|---|---|
-| `GET` | `/domains` | Required | List user's domains |
-| `POST` | `/domains` | Required | Register a domain |
-| `GET` | `/domains/:id` | Required | Domain detail + verification instructions |
-| `POST` | `/domains/:id/verify` | Required | Trigger ownership check. Body: `{ method: "dns_txt" \| "well_known_file" }` |
-| `DELETE` | `/domains/:id` | Required | Remove domain |
-| `GET` | `/domains/:id/history` | Required | Scan history with per-run severity counts |
+| `GET` | `/domains` | Requerida | Listar dominios del usuario |
+| `POST` | `/domains` | Requerida | Registrar un dominio |
+| `GET` | `/domains/:id` | Requerida | Detalle del dominio + instrucciones de verificación |
+| `POST` | `/domains/:id/verify` | Requerida | Disparar verificación de propiedad. Body: `{ method: "dns_txt" \| "well_known_file" }` |
+| `DELETE` | `/domains/:id` | Requerida | Eliminar dominio |
+| `GET` | `/domains/:id/history` | Requerida | Historial de scans con conteos de severidad por ejecución |
 
 ### Scans
 
-| Method | Path | Auth | Description |
+| Método | Path | Auth | Descripción |
 |---|---|---|---|
-| `POST` | `/scans` | Required | Start a scan (rate-limited: 10/hour per user) |
-| `GET` | `/scans` | Required | List all scan jobs for the user |
-| `GET` | `/scans/:id` | Required | Job status + full results when completed |
-| `GET` | `/scans/:id/export/json` | Required | Download results as JSON file |
+| `POST` | `/scans` | Requerida | Iniciar un scan (rate-limited: 10/hora por usuario) |
+| `GET` | `/scans` | Requerida | Listar todos los scan jobs del usuario |
+| `GET` | `/scans/:id` | Requerida | Estado del job + resultados completos cuando finaliza |
+| `GET` | `/scans/:id/export/json` | Requerida | Descargar resultados como archivo JSON |
 
-**POST /scans** body:
+**Body de POST /scans:**
 
 ```json
 {
@@ -208,7 +208,7 @@ Both return `{ token, user }`.
 }
 ```
 
-**GET /scans/:id** response (completed):
+**Respuesta de GET /scans/:id (completado):**
 
 ```json
 {
@@ -223,17 +223,32 @@ Both return `{ token, user }`.
 
 ### Health
 
-| Method | Path | Auth | Description |
+| Método | Path | Auth | Descripción |
 |---|---|---|---|
-| `GET` | `/health` | — | Returns `{ status: "ok", version: "1.0.0", db: "connected" }` |
+| `GET` | `/health` | — | Devuelve `{ status: "ok", version: "1.0.0", db: "connected" }` |
 
 ---
 
 ## Roadmap
 
-- [ ] Active DNS brute-force (behind ownership gate)
-- [ ] Shodan API integration for passive port intel
-- [ ] Scheduled recurring scans with change detection
-- [ ] Slack / webhook notifications on new findings
-- [ ] AWS deployment option (ECS + RDS)
-- [ ] CompTIA Security+ exam prep integration (study mode)
+- [ ] DNS brute-force activo (detrás del gate de verificación de propiedad)
+- [ ] Integración con la API de Shodan para inteligencia pasiva de puertos
+- [ ] Scans recurrentes programados con detección de cambios
+- [ ] Notificaciones por Slack / webhook ante nuevos findings
+- [ ] Opción de deploy en AWS (ECS + RDS)
+- [ ] Integración de preparación para CompTIA Security+ (modo estudio)
+
+---
+
+## Autor
+
+**Franco Villagra** — Desarrollador · Ciberseguridad
+
+- Portfolio: [francoverse.vercel.app](https://francoverse.vercel.app)
+- GitHub: [@francovillagra](https://github.com/francovillagra)
+
+---
+
+## Licencia
+
+MIT — libre para usar, modificar y distribuir.

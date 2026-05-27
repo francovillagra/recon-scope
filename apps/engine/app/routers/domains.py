@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,10 @@ from app.database import get_session
 from app.dependencies import get_current_user
 from app.models.audit_log import AuditLog
 from app.models.domain import Domain
+from app.models.finding import Finding
+from app.models.port import Port
+from app.models.scan_job import ScanJob
+from app.models.subdomain import Subdomain
 from app.models.user import User
 from app.schemas.domain import (
     CreateDomainRequest,
@@ -26,6 +30,7 @@ from app.schemas.domain import (
     WellKnownFileInstructions,
     WellKnownInstructions,
 )
+from app.schemas.scan import FindingsBySeverityCount, ScanHistoryEntry
 from app.services.domain_verification import verify_dns_txt, verify_well_known_file
 
 router = APIRouter(prefix="/domains", tags=["domains"])
@@ -217,3 +222,67 @@ async def delete_domain(
     domain = await _get_owned_domain(domain_id, current_user, session)
     await session.delete(domain)
     await session.commit()
+
+
+# ── GET /domains/{id}/history ─────────────────────────────────────────────────
+
+@router.get("/{domain_id}/history", response_model=list[ScanHistoryEntry])
+async def domain_history(
+    domain_id: uuid.UUID,
+    current_user: AuthDep,
+    session: SessionDep,
+) -> list[ScanHistoryEntry]:
+    await _get_owned_domain(domain_id, current_user, session)  # ownership check
+
+    jobs = list(await session.scalars(
+        select(ScanJob)
+        .where(ScanJob.domain_id == domain_id, ScanJob.user_id == current_user.id)
+        .order_by(ScanJob.created_at.desc())
+    ))
+    if not jobs:
+        return []
+
+    job_ids = [j.id for j in jobs]
+
+    # Subdomains count per job
+    sub_rows = await session.execute(
+        select(Subdomain.scan_job_id, func.count().label("cnt"))
+        .where(Subdomain.scan_job_id.in_(job_ids))
+        .group_by(Subdomain.scan_job_id)
+    )
+    sub_counts: dict[uuid.UUID, int] = {r.scan_job_id: r.cnt for r in sub_rows}
+
+    # Open ports count per job
+    port_rows = await session.execute(
+        select(Port.scan_job_id, func.count().label("cnt"))
+        .where(Port.scan_job_id.in_(job_ids), Port.state == "open")
+        .group_by(Port.scan_job_id)
+    )
+    port_counts: dict[uuid.UUID, int] = {r.scan_job_id: r.cnt for r in port_rows}
+
+    # Findings by severity per job
+    finding_rows = await session.execute(
+        select(Finding.scan_job_id, Finding.severity, func.count().label("cnt"))
+        .where(Finding.scan_job_id.in_(job_ids))
+        .group_by(Finding.scan_job_id, Finding.severity)
+    )
+    findings_by_job: dict[uuid.UUID, dict[str, int]] = {}
+    for r in finding_rows:
+        findings_by_job.setdefault(r.scan_job_id, {})[r.severity] = r.cnt
+
+    return [
+        ScanHistoryEntry(
+            id=j.id,
+            status=j.status,
+            created_at=j.created_at,
+            completed_at=j.completed_at,
+            config=j.config,
+            subdomains_count=sub_counts.get(j.id, 0),
+            open_ports_count=port_counts.get(j.id, 0),
+            findings_by_severity=FindingsBySeverityCount(
+                **{k: findings_by_job.get(j.id, {}).get(k, 0)
+                   for k in ("critical", "high", "medium", "low", "info")}
+            ),
+        )
+        for j in jobs
+    ]

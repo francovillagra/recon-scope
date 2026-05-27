@@ -14,6 +14,10 @@ import type {
   ScanCreateOptions,
 } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
+import { FindingsBySeverity } from '@/components/charts/FindingsBySeverity'
+import { OpenPortsByHost } from '@/components/charts/OpenPortsByHost'
+import { ScanHistory } from '@/components/charts/ScanHistory'
+import { exportScanPDF } from '@/lib/pdf-export'
 
 const POLL_INTERVAL_MS = 3000
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled'])
@@ -90,6 +94,9 @@ export default function ScanPage({
   const [starting, setStarting] = useState(false)
   const [startError, setStartError] = useState<string | null>(null)
   const [fetchError, setFetchError] = useState<string | null>(null)
+  const [exportingJson, setExportingJson] = useState(false)
+  const [exportingPdf, setExportingPdf] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
@@ -175,11 +182,45 @@ export default function ScanPage({
     }
   }
 
+  async function handleExportJson() {
+    if (!job) return
+    setExportError(null)
+    setExportingJson(true)
+    try {
+      await scans.exportJson(job.id)
+    } catch {
+      setExportError('JSON export failed.')
+    } finally {
+      setExportingJson(false)
+    }
+  }
+
+  async function handleExportPdf() {
+    if (!job) return
+    setExportError(null)
+    setExportingPdf(true)
+    try {
+      await exportScanPDF(domainName, {
+        job,
+        subdomains,
+        ports,
+        http_fingerprints: fingerprints,
+        technologies,
+        tls_certificates: tlsCerts,
+        findings,
+      })
+    } catch {
+      setExportError('PDF export failed.')
+    } finally {
+      setExportingPdf(false)
+    }
+  }
+
   const isRunning = job !== null && !TERMINAL_STATUSES.has(job.status)
   const noModSelected = !modSubdomains && !modPorts && !modFingerprint
 
   return (
-    <div className="max-w-3xl">
+    <div className="max-w-5xl">
       {/* Header */}
       <div className="mb-6 flex items-center gap-3">
         <button
@@ -309,6 +350,56 @@ export default function ScanPage({
       {/* Results */}
       {job?.status === 'completed' && (
         <div className="space-y-6">
+          {/* Charts */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                Findings by Severity
+              </h2>
+              <div className="h-56">
+                <FindingsBySeverity findings={findings} />
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                Open Ports by Host
+              </h2>
+              <div className="h-56">
+                <OpenPortsByHost ports={ports} />
+              </div>
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+              Scan History
+            </h2>
+            <div className="h-48">
+              <ScanHistory domainId={id} />
+            </div>
+          </div>
+
+          {/* Export buttons */}
+          <div className="flex items-center gap-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportJson}
+              loading={exportingJson}
+              disabled={exportingJson || exportingPdf}
+            >
+              Export JSON
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleExportPdf}
+              loading={exportingPdf}
+              disabled={exportingJson || exportingPdf}
+            >
+              Export PDF
+            </Button>
+            {exportError && <p className="text-sm text-red-600">{exportError}</p>}
+          </div>
           {/* Subdomains */}
           <ResultTable
             title="Subdomains found"

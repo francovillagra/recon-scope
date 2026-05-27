@@ -125,3 +125,22 @@ class ScanDetailResponse(BaseModel):
     technologies: list[TechnologyOut] = []
     tls_certificates: list[TlsCertificateOut] = []
     findings: list[FindingOut] = []
+
+
+class FindingsBySeverityCount(BaseModel):
+    critical: int = 0
+    high: int = 0
+    medium: int = 0
+    low: int = 0
+    info: int = 0
+
+
+class ScanHistoryEntry(BaseModel):
+    id: uuid.UUID
+    status: str
+    created_at: datetime
+    completed_at: Optional[datetime]
+    config: dict
+    subdomains_count: int
+    open_ports_count: int
+    findings_by_severity: FindingsBySeverityCount

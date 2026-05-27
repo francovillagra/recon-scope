@@ -97,6 +97,9 @@ export const domains = {
 
   remove: (id: string) =>
     request<void>(`/api/v1/domains/${id}`, { method: 'DELETE' }),
+
+  history: (id: string) =>
+    request<ScanHistoryEntry[]>(`/api/v1/domains/${id}/history`),
 }
 
 // ── Scans ─────────────────────────────────────────────────────────────────────
@@ -193,6 +196,25 @@ export interface ScanCreateOptions {
   timeout_seconds?: number
 }
 
+export interface FindingsBySeverity {
+  critical: number
+  high: number
+  medium: number
+  low: number
+  info: number
+}
+
+export interface ScanHistoryEntry {
+  id: string
+  status: string
+  created_at: string
+  completed_at: string | null
+  config: Record<string, unknown>
+  subdomains_count: number
+  open_ports_count: number
+  findings_by_severity: FindingsBySeverity
+}
+
 export const scans = {
   create: (domain_id: string, opts: ScanCreateOptions = {}) =>
     request<{ job_id: string; status: string }>('/api/v1/scans', {
@@ -209,6 +231,25 @@ export const scans = {
   list: () => request<ScanJob[]>('/api/v1/scans'),
 
   get: (job_id: string) => request<ScanDetail>(`/api/v1/scans/${job_id}`),
+
+  exportJson: async (job_id: string): Promise<void> => {
+    const token = getToken()
+    const res = await fetch(`${BASE}/api/v1/scans/${job_id}/export/json`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) throw new ApiError(res.status, 'Export failed')
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const cd = res.headers.get('content-disposition') ?? ''
+    const match = cd.match(/filename="([^"]+)"/)
+    a.download = match ? match[1] : `recon-export-${job_id}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  },
 }
 
 export { ApiError }

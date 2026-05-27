@@ -135,14 +135,59 @@ export interface ScanJob {
   updated_at: string
 }
 
+export interface HttpFingerprintRow {
+  id: string
+  url: string
+  status_code: number | null
+  server_header: string | null
+  title: string | null
+  created_at: string
+}
+
+export interface TechnologyRow {
+  id: string
+  name: string
+  category: string | null
+  version: string | null
+  confidence: number | null
+  created_at: string
+}
+
+export interface TlsCertRow {
+  id: string
+  host: string
+  issuer: string | null
+  subject: string | null
+  valid_from: string | null
+  valid_to: string | null
+  is_valid: boolean | null
+  signature_algorithm: string | null
+  san: string[]
+  created_at: string
+}
+
+export interface FindingRow {
+  id: string
+  category: string
+  severity: 'info' | 'low' | 'medium' | 'high' | 'critical'
+  title: string
+  description: string | null
+  evidence: Record<string, unknown>
+  created_at: string
+}
+
 export interface ScanDetail {
   job: ScanJob
   subdomains: SubdomainRow[]
   ports: PortRow[]
+  http_fingerprints: HttpFingerprintRow[]
+  technologies: TechnologyRow[]
+  tls_certificates: TlsCertRow[]
+  findings: FindingRow[]
 }
 
 export interface ScanCreateOptions {
-  modules?: string[]
+  modules?: string[]          // e.g. ['subdomains','ports','fingerprint']
   port_range?: 'top-100' | 'top-1000' | 'full'
   passive_only?: boolean
   timeout_seconds?: number

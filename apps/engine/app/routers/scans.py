@@ -20,17 +20,25 @@ from app.database import get_session
 from app.dependencies import get_current_user
 from app.models.audit_log import AuditLog
 from app.models.domain import Domain
+from app.models.finding import Finding
+from app.models.http_fingerprint import HttpFingerprint
 from app.models.port import Port
 from app.models.scan_job import ScanJob
 from app.models.subdomain import Subdomain
+from app.models.technology import Technology
+from app.models.tls_certificate import TlsCertificate
 from app.models.user import User
 from app.schemas.scan import (
     CreateScanRequest,
     CreateScanResponse,
+    FindingOut,
+    HttpFingerprintOut,
     PortOut,
     ScanDetailResponse,
     ScanJobOut,
     SubdomainOut,
+    TechnologyOut,
+    TlsCertificateOut,
 )
 from app.services.scan_runner import run_scan
 
@@ -133,12 +141,14 @@ async def get_scan(
 
     subs: list[SubdomainOut] = []
     ports: list[PortOut] = []
+    fingerprints: list[HttpFingerprintOut] = []
+    technologies: list[TechnologyOut] = []
+    tls_certs: list[TlsCertificateOut] = []
+    findings: list[FindingOut] = []
 
     if job.status == "completed":
         sub_rows = await session.scalars(
-            select(Subdomain)
-            .where(Subdomain.scan_job_id == job_id)
-            .order_by(Subdomain.hostname)
+            select(Subdomain).where(Subdomain.scan_job_id == job_id).order_by(Subdomain.hostname)
         )
         subs = [SubdomainOut.model_validate(s) for s in sub_rows]
 
@@ -149,8 +159,32 @@ async def get_scan(
         )
         ports = [PortOut.model_validate(p) for p in port_rows]
 
+        fp_rows = await session.scalars(
+            select(HttpFingerprint).where(HttpFingerprint.scan_job_id == job_id).order_by(HttpFingerprint.url)
+        )
+        fingerprints = [HttpFingerprintOut.model_validate(f) for f in fp_rows]
+
+        tech_rows = await session.scalars(
+            select(Technology).where(Technology.scan_job_id == job_id).order_by(Technology.name)
+        )
+        technologies = [TechnologyOut.model_validate(t) for t in tech_rows]
+
+        tls_rows = await session.scalars(
+            select(TlsCertificate).where(TlsCertificate.scan_job_id == job_id).order_by(TlsCertificate.host)
+        )
+        tls_certs = [TlsCertificateOut.model_validate(c) for c in tls_rows]
+
+        finding_rows = await session.scalars(
+            select(Finding).where(Finding.scan_job_id == job_id).order_by(Finding.severity, Finding.category)
+        )
+        findings = [FindingOut.model_validate(f) for f in finding_rows]
+
     return ScanDetailResponse(
         job=ScanJobOut.model_validate(job),
         subdomains=subs,
         ports=ports,
+        http_fingerprints=fingerprints,
+        technologies=technologies,
+        tls_certificates=tls_certs,
+        findings=findings,
     )

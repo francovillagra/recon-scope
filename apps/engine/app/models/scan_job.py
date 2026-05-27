@@ -13,6 +13,10 @@ if TYPE_CHECKING:
     from app.models.domain import Domain
     from app.models.subdomain import Subdomain
     from app.models.port import Port
+    from app.models.http_fingerprint import HttpFingerprint
+    from app.models.technology import Technology
+    from app.models.tls_certificate import TlsCertificate
+    from app.models.finding import Finding
 
 
 class ScanJob(Base):
@@ -88,5 +92,17 @@ class ScanJob(Base):
         back_populates="scan_job", cascade="all, delete-orphan"
     )
     ports: Mapped[list["Port"]] = relationship(
+        back_populates="scan_job", cascade="all, delete-orphan"
+    )
+    http_fingerprints: Mapped[list["HttpFingerprint"]] = relationship(
+        back_populates="scan_job", cascade="all, delete-orphan"
+    )
+    technologies: Mapped[list["Technology"]] = relationship(
+        back_populates="scan_job", cascade="all, delete-orphan"
+    )
+    tls_certificates: Mapped[list["TlsCertificate"]] = relationship(
+        back_populates="scan_job", cascade="all, delete-orphan"
+    )
+    findings: Mapped[list["Finding"]] = relationship(
         back_populates="scan_job", cascade="all, delete-orphan"
     )

@@ -3,7 +3,16 @@
 import { use, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { scans, domains as domainsApi, ApiError } from '@/lib/api'
-import type { ScanJob, SubdomainRow, PortRow, ScanCreateOptions } from '@/lib/api'
+import type {
+  ScanJob,
+  SubdomainRow,
+  PortRow,
+  HttpFingerprintRow,
+  TechnologyRow,
+  TlsCertRow,
+  FindingRow,
+  ScanCreateOptions,
+} from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 
 const POLL_INTERVAL_MS = 3000
@@ -15,6 +24,44 @@ const PORT_RANGE_LABELS: Record<PortRange, string> = {
   'top-100': 'Top 100',
   'top-1000': 'Top 1000',
   'full': 'Full (1–65535, slow)',
+}
+
+type Severity = FindingRow['severity']
+
+const SEVERITY_BADGE: Record<Severity, string> = {
+  critical: 'bg-red-100 text-red-700',
+  high: 'bg-orange-100 text-orange-700',
+  medium: 'bg-yellow-100 text-yellow-700',
+  low: 'bg-blue-100 text-blue-700',
+  info: 'bg-slate-100 text-slate-600',
+}
+
+function ConfidenceBadge({ value }: { value: number | null }) {
+  if (value === null) return <span className="text-slate-300">—</span>
+  const cls =
+    value >= 80
+      ? 'bg-emerald-100 text-emerald-700'
+      : value >= 50
+        ? 'bg-yellow-100 text-yellow-700'
+        : 'bg-slate-100 text-slate-500'
+  return (
+    <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${cls}`}>
+      {value}%
+    </span>
+  )
+}
+
+function ValidBadge({ value }: { value: boolean | null }) {
+  if (value === null) return <span className="text-slate-300">—</span>
+  return value ? (
+    <span className="inline-block rounded px-1.5 py-0.5 text-xs font-medium bg-emerald-100 text-emerald-700">
+      Valid
+    </span>
+  ) : (
+    <span className="inline-block rounded px-1.5 py-0.5 text-xs font-medium bg-red-100 text-red-700">
+      Invalid
+    </span>
+  )
 }
 
 export default function ScanPage({
@@ -29,10 +76,15 @@ export default function ScanPage({
   const [job, setJob] = useState<ScanJob | null>(null)
   const [subdomains, setSubdomains] = useState<SubdomainRow[]>([])
   const [ports, setPorts] = useState<PortRow[]>([])
+  const [fingerprints, setFingerprints] = useState<HttpFingerprintRow[]>([])
+  const [technologies, setTechnologies] = useState<TechnologyRow[]>([])
+  const [tlsCerts, setTlsCerts] = useState<TlsCertRow[]>([])
+  const [findings, setFindings] = useState<FindingRow[]>([])
 
   // Config options
   const [modSubdomains, setModSubdomains] = useState(true)
   const [modPorts, setModPorts] = useState(true)
+  const [modFingerprint, setModFingerprint] = useState(true)
   const [portRange, setPortRange] = useState<PortRange>('top-1000')
 
   const [starting, setStarting] = useState(false)
@@ -64,10 +116,12 @@ export default function ScanPage({
         if (detail.job.status === 'completed') {
           setSubdomains(detail.subdomains)
           setPorts(detail.ports)
+          setFingerprints(detail.http_fingerprints)
+          setTechnologies(detail.technologies)
+          setTlsCerts(detail.tls_certificates)
+          setFindings(detail.findings)
         }
-        if (TERMINAL_STATUSES.has(detail.job.status)) {
-          stopPolling()
-        }
+        if (TERMINAL_STATUSES.has(detail.job.status)) stopPolling()
       } catch {
         stopPolling()
       }
@@ -77,7 +131,7 @@ export default function ScanPage({
   useEffect(() => () => stopPolling(), [])
 
   async function handleRunRecon() {
-    if (!modSubdomains && !modPorts) {
+    if (!modSubdomains && !modPorts && !modFingerprint) {
       setStartError('Select at least one module.')
       return
     }
@@ -87,6 +141,7 @@ export default function ScanPage({
     const modules: string[] = []
     if (modSubdomains) modules.push('subdomains')
     if (modPorts) modules.push('ports')
+    if (modFingerprint) modules.push('fingerprint')
 
     const opts: ScanCreateOptions = {
       modules,
@@ -114,15 +169,14 @@ export default function ScanPage({
       setJob(initial)
       startPolling(res.job_id)
     } catch (err) {
-      setStartError(
-        err instanceof ApiError ? err.message : 'Failed to start scan.',
-      )
+      setStartError(err instanceof ApiError ? err.message : 'Failed to start scan.')
     } finally {
       setStarting(false)
     }
   }
 
   const isRunning = job !== null && !TERMINAL_STATUSES.has(job.status)
+  const noModSelected = !modSubdomains && !modPorts && !modFingerprint
 
   return (
     <div className="max-w-3xl">
@@ -142,47 +196,37 @@ export default function ScanPage({
         </div>
       </div>
 
-      {fetchError && (
-        <p className="mb-4 text-sm text-red-600">{fetchError}</p>
-      )}
+      {fetchError && <p className="mb-4 text-sm text-red-600">{fetchError}</p>}
 
       {/* Config + run button */}
       {!job && (
         <div className="rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-sm space-y-5">
-          {/* Modules */}
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
               Modules
             </p>
             <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-3 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={modSubdomains}
-                  onChange={(e) => setModSubdomains(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                />
-                <span className="text-sm text-slate-700">
-                  Subdomain Enumeration
-                  <span className="ml-2 text-xs text-slate-400">(passive, crt.sh)</span>
-                </span>
-              </label>
-              <label className="flex items-center gap-3 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={modPorts}
-                  onChange={(e) => setModPorts(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                />
-                <span className="text-sm text-slate-700">
-                  Port Scan
-                  <span className="ml-2 text-xs text-slate-400">(TCP connect, asyncio)</span>
-                </span>
-              </label>
+              <ModuleCheckbox
+                checked={modSubdomains}
+                onChange={setModSubdomains}
+                label="Subdomain Enumeration"
+                hint="passive, crt.sh"
+              />
+              <ModuleCheckbox
+                checked={modPorts}
+                onChange={setModPorts}
+                label="Port Scan"
+                hint="TCP connect, asyncio"
+              />
+              <ModuleCheckbox
+                checked={modFingerprint}
+                onChange={setModFingerprint}
+                label="Fingerprint"
+                hint="HTTP headers, tech stack, TLS"
+              />
             </div>
           </div>
 
-          {/* Port range selector — only visible when port scan is enabled */}
           {modPorts && (
             <div>
               <label
@@ -209,14 +253,12 @@ export default function ScanPage({
           <Button
             onClick={handleRunRecon}
             loading={starting}
-            disabled={starting || (!modSubdomains && !modPorts)}
+            disabled={starting || noModSelected}
           >
             Run Recon
           </Button>
 
-          {startError && (
-            <p className="text-sm text-red-600">{startError}</p>
-          )}
+          {startError && <p className="text-sm text-red-600">{startError}</p>}
         </div>
       )}
 
@@ -224,12 +266,8 @@ export default function ScanPage({
       {job && (
         <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm mb-6">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-slate-700 capitalize">
-              {job.status}
-            </span>
-            <span className="text-sm tabular-nums text-slate-500">
-              {job.progress}%
-            </span>
+            <span className="text-sm font-medium text-slate-700 capitalize">{job.status}</span>
+            <span className="text-sm tabular-nums text-slate-500">{job.progress}%</span>
           </div>
           <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden">
             <div
@@ -237,20 +275,15 @@ export default function ScanPage({
               style={{ width: `${job.progress}%` }}
             />
           </div>
-
           {isRunning && (
             <p className="mt-3 text-xs text-slate-400 flex items-center gap-1.5">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
               Polling every 3 s…
             </p>
           )}
-
           {job.status === 'failed' && job.error_message && (
-            <p className="mt-3 text-sm text-red-600">
-              Error: {job.error_message}
-            </p>
+            <p className="mt-3 text-sm text-red-600">Error: {job.error_message}</p>
           )}
-
           {job.status === 'failed' && (
             <Button
               className="mt-4"
@@ -260,6 +293,10 @@ export default function ScanPage({
                 setJob(null)
                 setSubdomains([])
                 setPorts([])
+                setFingerprints([])
+                setTechnologies([])
+                setTlsCerts([])
+                setFindings([])
                 setStartError(null)
               }}
             >
@@ -313,13 +350,114 @@ export default function ScanPage({
               </tr>
             ))}
           </ResultTable>
+
+          {/* Technologies */}
+          <ResultTable
+            title="Technologies detected"
+            count={technologies.length}
+            empty="No technologies detected."
+            headers={['Name', 'Category', 'Version', 'Confidence']}
+          >
+            {technologies.map((t) => (
+              <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-3 font-medium text-slate-800">{t.name}</td>
+                <td className="px-6 py-3 text-slate-500">{t.category ?? <span className="text-slate-300">—</span>}</td>
+                <td className="px-6 py-3 font-mono text-slate-500">
+                  {t.version ?? <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-6 py-3">
+                  <ConfidenceBadge value={t.confidence} />
+                </td>
+              </tr>
+            ))}
+          </ResultTable>
+
+          {/* TLS Certificates */}
+          <ResultTable
+            title="TLS certificates"
+            count={tlsCerts.length}
+            empty="No TLS certificates captured."
+            headers={['Host', 'Issuer', 'Valid From', 'Valid To', 'Status']}
+          >
+            {tlsCerts.map((c) => (
+              <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-3 font-mono text-slate-800">{c.host}</td>
+                <td className="px-6 py-3 text-slate-500">
+                  {c.issuer ?? <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-6 py-3 text-xs text-slate-500">
+                  {c.valid_from ? new Date(c.valid_from).toLocaleDateString() : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-6 py-3 text-xs text-slate-500">
+                  {c.valid_to ? new Date(c.valid_to).toLocaleDateString() : <span className="text-slate-300">—</span>}
+                </td>
+                <td className="px-6 py-3">
+                  <ValidBadge value={c.is_valid} />
+                </td>
+              </tr>
+            ))}
+          </ResultTable>
+
+          {/* Findings */}
+          <ResultTable
+            title="Findings"
+            count={findings.length}
+            empty="No findings."
+            headers={['Severity', 'Category', 'Title', 'Description']}
+          >
+            {findings.map((f) => (
+              <tr key={f.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-6 py-3">
+                  <span
+                    className={`inline-block rounded px-2 py-0.5 text-xs font-semibold uppercase ${SEVERITY_BADGE[f.severity]}`}
+                  >
+                    {f.severity}
+                  </span>
+                </td>
+                <td className="px-6 py-3 text-xs text-slate-500 whitespace-nowrap">
+                  {f.category.replace(/_/g, ' ')}
+                </td>
+                <td className="px-6 py-3 text-sm font-medium text-slate-800">{f.title}</td>
+                <td className="px-6 py-3 text-xs text-slate-500 max-w-sm">
+                  {f.description ?? <span className="text-slate-300">—</span>}
+                </td>
+              </tr>
+            ))}
+          </ResultTable>
         </div>
       )}
     </div>
   )
 }
 
-// ── Shared table shell ────────────────────────────────────────────────────────
+// ── Shared components ─────────────────────────────────────────────────────────
+
+function ModuleCheckbox({
+  checked,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: string
+  hint: string
+}) {
+  return (
+    <label className="flex items-center gap-3 cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+      />
+      <span className="text-sm text-slate-700">
+        {label}
+        <span className="ml-2 text-xs text-slate-400">({hint})</span>
+      </span>
+    </label>
+  )
+}
 
 function ResultTable({
   title,
@@ -342,7 +480,6 @@ function ResultTable({
           {count} result{count !== 1 ? 's' : ''}
         </span>
       </div>
-
       {count === 0 ? (
         <p className="px-6 py-8 text-center text-sm text-slate-400">{empty}</p>
       ) : (

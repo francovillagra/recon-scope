@@ -1,5 +1,3 @@
-![recon-scope](./assets/banner.png)
-
 ![Python](https://img.shields.io/badge/Python-3.12-3fb950?style=flat-square&logo=python&logoColor=white&labelColor=0d1117) ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-3fb950?style=flat-square&logo=fastapi&logoColor=white&labelColor=0d1117) ![Next.js](https://img.shields.io/badge/Next.js-14-3fb950?style=flat-square&logo=next.js&logoColor=white&labelColor=0d1117) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3fb950?style=flat-square&logo=postgresql&logoColor=white&labelColor=0d1117) ![Railway](https://img.shields.io/badge/Deploy-Railway-3fb950?style=flat-square&logo=railway&logoColor=white&labelColor=0d1117)
 
 # recon-scope

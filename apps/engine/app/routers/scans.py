@@ -1,12 +1,14 @@
 """
-Scan router — Phase 1 + Phase 2 + Phase 3 + Phase 4.
+Scan router — Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5.
 
-POST /scans              — create a scan_job for a verified domain.
+POST /scans              — create a scan_job for a verified domain (rate-limited: 10/hour per user).
 GET  /scans              — list scan jobs for the authenticated user.
 GET  /scans/{job_id}     — job status + all scan data when completed.
 GET  /scans/{job_id}/export/json — full ScanDetailResponse as file download.
 """
+import time
 import uuid
+from collections import defaultdict
 from datetime import date
 from typing import Annotated
 
@@ -46,6 +48,24 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 
 AuthDep = Annotated[User, Depends(get_current_user)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+# ── In-memory rate limiter ────────────────────────────────────────────────────
+
+_RATE_LIMIT = 10
+_RATE_WINDOW = 3600  # seconds
+_scan_timestamps: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(user_id: str) -> None:
+    now = time.time()
+    cutoff = now - _RATE_WINDOW
+    _scan_timestamps[user_id] = [t for t in _scan_timestamps[user_id] if t > cutoff]
+    if len(_scan_timestamps[user_id]) >= _RATE_LIMIT:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded. Maximum {_RATE_LIMIT} scans per hour per user.",
+        )
+    _scan_timestamps[user_id].append(now)
 
 
 # ── shared helper ─────────────────────────────────────────────────────────────
@@ -126,6 +146,8 @@ async def create_scan(
     current_user: AuthDep,
     session: SessionDep,
 ) -> CreateScanResponse:
+    _check_rate_limit(str(current_user.id))
+
     domain = await session.get(Domain, body.domain_id)
     if domain is None or domain.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain not found")

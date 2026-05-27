@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button'
 import { FindingsBySeverity } from '@/components/charts/FindingsBySeverity'
 import { OpenPortsByHost } from '@/components/charts/OpenPortsByHost'
 import { ScanHistory } from '@/components/charts/ScanHistory'
+import { ChartErrorBoundary } from '@/components/charts/ChartErrorBoundary'
 import { exportScanPDF } from '@/lib/pdf-export'
 
 const POLL_INTERVAL_MS = 3000
@@ -351,32 +352,34 @@ export default function ScanPage({
       {job?.status === 'completed' && (
         <div className="space-y-6">
           {/* Charts */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                Findings by Severity
-              </h2>
-              <div className="h-56">
-                <FindingsBySeverity findings={findings} />
+          <ChartErrorBoundary>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Findings by Severity
+                </h2>
+                <div className="h-56">
+                  <FindingsBySeverity findings={findings} />
+                </div>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
+                  Open Ports by Host
+                </h2>
+                <div className="h-56">
+                  <OpenPortsByHost ports={ports} />
+                </div>
               </div>
             </div>
             <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
               <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-                Open Ports by Host
+                Scan History
               </h2>
-              <div className="h-56">
-                <OpenPortsByHost ports={ports} />
+              <div className="h-48">
+                <ScanHistory domainId={id} />
               </div>
             </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-              Scan History
-            </h2>
-            <div className="h-48">
-              <ScanHistory domainId={id} />
-            </div>
-          </div>
+          </ChartErrorBoundary>
 
           {/* Export buttons */}
           <div className="flex items-center gap-3">

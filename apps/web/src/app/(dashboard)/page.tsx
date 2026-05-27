@@ -3,10 +3,12 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useAuth } from '@/providers/AuthProvider'
-import { domains as domainsApi } from '@/lib/api'
+import { domains as domainsApi, scans as scansApi } from '@/lib/api'
 import type { Domain } from '@recon/core'
+import type { ScanJob } from '@/lib/api'
 import { Card, CardBody } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
+import { DomainCard } from '@/components/domains/DomainCard'
 
 function StatCard({
   label,
@@ -31,15 +33,35 @@ function StatCard({
 export default function DashboardOverview() {
   const { user } = useAuth()
   const [domainList, setDomainList] = useState<Domain[]>([])
+  const [lastScans, setLastScans] = useState<Map<string, ScanJob>>(new Map())
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    domainsApi
-      .list()
-      .then((res) => setDomainList(res.domains))
+    Promise.all([domainsApi.list(), scansApi.list()])
+      .then(([domainsRes, scanJobs]) => {
+        setDomainList(domainsRes.domains)
+        const map = new Map<string, ScanJob>()
+        for (const job of scanJobs) {
+          if (!map.has(job.domain_id)) {
+            map.set(job.domain_id, job)
+          }
+        }
+        setLastScans(map)
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])
+
+  function handleDelete(id: string) {
+    domainsApi.remove(id).then(() => {
+      setDomainList((prev) => prev.filter((d) => d.id !== id))
+      setLastScans((prev) => {
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      })
+    })
+  }
 
   const verified = domainList.filter((d) => d.verification_status === 'verified').length
   const pending = domainList.filter((d) => d.verification_status === 'pending').length
@@ -48,10 +70,8 @@ export default function DashboardOverview() {
     <div>
       <div className="mb-8 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Overview</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            Welcome back, {user?.email}
-          </p>
+          <h1 className="text-2xl font-bold text-slate-900">Dashboard</h1>
+          <p className="mt-1 text-sm text-slate-500">Welcome back, {user?.email}</p>
         </div>
         <Link href="/dashboard/domains/new">
           <Button>+ Add Domain</Button>
@@ -60,39 +80,37 @@ export default function DashboardOverview() {
 
       {/* Stats */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 mb-8">
-        <StatCard
-          label="Total Domains"
-          value={loading ? '—' : domainList.length}
-          sub="registered"
-        />
-        <StatCard
-          label="Verified"
-          value={loading ? '—' : verified}
-          sub="ready to scan"
-        />
-        <StatCard
-          label="Pending Verification"
-          value={loading ? '—' : pending}
-          sub="awaiting DNS / file check"
-        />
+        <StatCard label="Total Domains" value={loading ? '—' : domainList.length} sub="registered" />
+        <StatCard label="Verified" value={loading ? '—' : verified} sub="ready to scan" />
+        <StatCard label="Pending" value={loading ? '—' : pending} sub="awaiting verification" />
       </div>
 
-      {/* Phase notice */}
-      <Card>
-        <CardBody>
-          <div className="flex items-start gap-4">
-            <span className="text-2xl">⬡</span>
-            <div>
-              <h2 className="font-semibold text-slate-900">Phase 0 — Foundation</h2>
-              <p className="mt-1 text-sm text-slate-600">
-                Domain ownership verification is active. Scanning modules will be
-                available in Phase 1 (subdomain enumeration) and beyond. All domains
-                must be verified before any scan can be started.
-              </p>
-            </div>
-          </div>
-        </CardBody>
-      </Card>
+      {/* Domain list */}
+      {loading && <p className="text-sm text-slate-400">Loading…</p>}
+
+      {!loading && domainList.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-300 bg-white px-8 py-16 text-center">
+          <p className="text-slate-500">No domains registered yet.</p>
+          <Link href="/dashboard/domains/new">
+            <Button className="mt-4" variant="secondary">
+              Register your first domain
+            </Button>
+          </Link>
+        </div>
+      )}
+
+      {!loading && domainList.length > 0 && (
+        <div className="space-y-3">
+          {domainList.map((d) => (
+            <DomainCard
+              key={d.id}
+              domain={d}
+              lastScan={lastScans.get(d.id)}
+              onDelete={handleDelete}
+            />
+          ))}
+        </div>
+      )}
     </div>
   )
 }

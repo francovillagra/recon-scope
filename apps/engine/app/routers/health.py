@@ -11,7 +11,7 @@ router = APIRouter(tags=["health"])
 async def health(session: AsyncSession = Depends(get_session)):
     try:
         await session.execute(text("SELECT 1"))
-        return {"status": "ok", "db": "connected"}
+        return {"status": "ok", "version": "1.0.0", "db": "connected"}
     except Exception:
         from fastapi import Response
         return Response(

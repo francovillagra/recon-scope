@@ -34,6 +34,4 @@ USER app
 
 EXPOSE 8000
 
-# Run Alembic migration then start uvicorn.
-# In production, run migrations separately (e.g. Kubernetes init-container).
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000

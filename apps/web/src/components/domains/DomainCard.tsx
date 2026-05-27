@@ -2,15 +2,17 @@
 
 import Link from 'next/link'
 import type { Domain } from '@recon/core'
+import type { ScanJob } from '@/lib/api'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 
 interface DomainCardProps {
   domain: Domain
+  lastScan?: ScanJob
   onDelete?: (id: string) => void
 }
 
-export function DomainCard({ domain, onDelete }: DomainCardProps) {
+export function DomainCard({ domain, lastScan, onDelete }: DomainCardProps) {
   const badgeVariant =
     domain.verification_status === 'verified'
       ? 'verified'
@@ -26,6 +28,16 @@ export function DomainCard({ domain, onDelete }: DomainCardProps) {
           <p className="font-medium text-slate-900 truncate">{domain.domain}</p>
           <p className="text-xs text-slate-400 mt-0.5">
             Added {new Date(domain.created_at).toLocaleDateString()}
+            {lastScan && (
+              <span className="ml-2">
+                · Last scan: {new Date(lastScan.created_at).toLocaleDateString()}
+                <span
+                  className={`ml-1 ${lastScan.status === 'completed' ? 'text-emerald-500' : lastScan.status === 'failed' ? 'text-red-400' : 'text-slate-400'}`}
+                >
+                  {lastScan.status}
+                </span>
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -38,6 +50,15 @@ export function DomainCard({ domain, onDelete }: DomainCardProps) {
             <Button size="sm" variant="secondary">
               Verify
             </Button>
+          </Link>
+        )}
+
+        {domain.verification_status === 'verified' && lastScan?.status === 'completed' && (
+          <Link
+            href={`/dashboard/domains/${domain.id}/scan`}
+            className="text-xs text-slate-500 hover:text-brand-600 transition-colors whitespace-nowrap"
+          >
+            Last scan →
           </Link>
         )}
 

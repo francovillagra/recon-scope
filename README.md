@@ -1,23 +1,23 @@
+![recon-scope](./assets/banner.png)
+
+![Python](https://img.shields.io/badge/Python-3.12-3fb950?style=flat-square&logo=python&logoColor=white&labelColor=0d1117) ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-3fb950?style=flat-square&logo=fastapi&logoColor=white&labelColor=0d1117) ![Next.js](https://img.shields.io/badge/Next.js-14-3fb950?style=flat-square&logo=next.js&logoColor=white&labelColor=0d1117) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3fb950?style=flat-square&logo=postgresql&logoColor=white&labelColor=0d1117) ![Railway](https://img.shields.io/badge/Deploy-Railway-3fb950?style=flat-square&logo=railway&logoColor=white&labelColor=0d1117)
+
 # recon-scope
 
 > Automated reconnaissance platform for authorized security assessments.
 
 ---
 
-## Screenshot
-
-_Screenshot coming soon_
-
----
-
 ## Features
 
-- **Subdomain enumeration** — passive discovery via crt.sh with async DNS resolution; no brute-force, no noise
-- **Port scanning** — asyncio TCP connect scan with top-100, top-1000, or full (1–65535) port ranges and banner grabbing
-- **HTTP fingerprinting** — server headers, page title, tech stack detection (framework, CDN, CMS), TLS certificate capture
-- **Security findings** — automated finding generation with severity levels (critical / high / medium / low / info) and category tagging
-- **Export** — download results as JSON (full structured data) or PDF (client-side via jsPDF)
-- **Domain ownership gate** — enforced at both application and database level; no target can be scanned without verified ownership
+- **Subdomain Enumeration** — passive recon via certificate transparency (crt.sh), async DNS resolution with asyncio + dnspython
+- **Port Scanning** — pure Python asyncio TCP connect scan, Semaphore(200), banner grabbing, static service inference. No nmap dependency.
+- **HTTP Fingerprinting** — headers, title parsing, tech stack detection (nginx, Cloudflare, Vercel, WordPress, Django, Laravel and more)
+- **TLS Analysis** — certificate validity, expiry, SAN, signature algorithm
+- **Findings Engine** — severity-ranked findings (critical/high/medium/low/info) with evidence. Rules: exposed DB ports, SSH exposure, invalid TLS, missing security headers, server version disclosure.
+- **Domain Ownership Verification** — DNS TXT or well-known file verification before any scan. No unauthorized scanning possible.
+- **Audit Log** — every action logged with user, target, IP, and timestamp.
+- **Export** — full scan report as JSON (API) or PDF (client-side, jsPDF).
 
 ---
 
@@ -111,13 +111,11 @@ sequenceDiagram
 
 ## Security Design
 
-**Domain ownership verification** is the central safety mechanism. Every domain must pass an ownership check before any scan can be initiated. This is enforced at two independent layers: the application validates `verification_status === "verified"` and returns HTTP 422 if it is not, and a PostgreSQL trigger (`trg_scan_jobs_domain_verified`) raises an exception if a `scan_jobs` INSERT references an unverified domain. Neither layer alone is sufficient — both must pass.
+Domain ownership verification is mandatory before any scan can be initiated. Users must prove control of a domain by publishing a DNS TXT record at `_recon-verify.<domain>` or placing a token file at `/.well-known/recon-verification.txt`. This mirrors the approach used by Google Search Console and certificate authorities.
 
-**Authentication** uses HS256 JWTs with bcrypt password hashing (configurable rounds, default 12). Tokens expire after 7 days. The login endpoint performs a constant-time dummy hash comparison when the email does not exist to prevent timing-based user enumeration. Passwords are never returned by any endpoint.
+Authorization is enforced at the application level. Every database query filters by `user_id`. The FastAPI engine uses a service role key and is the sole trusted writer. All actions — domain registration, verification, scan start, scan completion, report generation — are written to a persistent `audit_log` table that survives domain or user deletion.
 
-**Audit logging** records every significant action — registration, domain verification attempts (success and failure), and scan starts — with the requester's IP address and a metadata payload. This provides a chain of custody for every scan that runs on the platform.
-
-**Authorized targets only.** The platform is designed exclusively for security testing against targets you own or have explicit written permission to test. Unauthorized scanning is illegal in most jurisdictions. The ownership verification gate, combined with scan attribution to a specific user, makes it technically and legally clear who authorized each assessment.
+Production deployments return no stack traces. All unhandled exceptions are caught by a global handler that logs internally and returns a generic 500 response. Rate limiting on `POST /scans` (10 requests/hour per user) prevents abuse.
 
 ---
 
@@ -233,10 +231,9 @@ Both return `{ token, user }`.
 
 ## Roadmap
 
-| Feature | Notes |
-|---|---|
-| Active DNS brute-force | Behind an additional per-domain authorization step |
-| Shodan integration | Correlate open ports with known CVEs |
-| Scheduled scans | Cron-based recurring recon with delta findings |
-| Slack / webhook alerts | Notify on new critical/high findings |
-| Multi-user organizations | Shared domain workspace with role-based access |
+- [ ] Active DNS brute-force (behind ownership gate)
+- [ ] Shodan API integration for passive port intel
+- [ ] Scheduled recurring scans with change detection
+- [ ] Slack / webhook notifications on new findings
+- [ ] AWS deployment option (ECS + RDS)
+- [ ] CompTIA Security+ exam prep integration (study mode)

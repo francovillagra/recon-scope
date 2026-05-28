@@ -1,7 +1,6 @@
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import (
     create_async_engine,
-    async_sessionmaker,
     AsyncSession,
 )
 from app.config import settings
@@ -15,16 +14,20 @@ def _make_url(raw: str) -> str:
     return raw
 
 
-engine = create_async_engine(
-    _make_url(settings.DATABASE_URL),
-    echo=settings.DEBUG,
-    pool_size=20,
-    max_overflow=10,
-)
+_engine = None
 
-AsyncSessionLocal = async_sessionmaker(engine, expire_on_commit=False)
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_async_engine(
+            _make_url(settings.DATABASE_URL),
+            pool_size=20,
+            max_overflow=10,
+        )
+    return _engine
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
+    async with AsyncSession(get_engine()) as session:
         yield session

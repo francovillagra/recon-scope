@@ -15,7 +15,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from app.database import AsyncSessionLocal
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.database import get_engine
 from app.models.audit_log import AuditLog
 from app.models.http_fingerprint import HttpFingerprint
 from app.models.port import Port
@@ -39,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _set_progress(job_id: uuid.UUID, progress: int) -> None:
-    async with AsyncSessionLocal() as s:
+    async with AsyncSession(get_engine()) as s:
         job = await s.get(ScanJob, job_id)
         if job:
             job.progress = progress
@@ -69,7 +70,7 @@ def _checkpoints(
 
 async def run_scan(job_id: uuid.UUID) -> None:
     # ── 1. Mark running ───────────────────────────────────────────────────────
-    async with AsyncSessionLocal() as s:
+    async with AsyncSession(get_engine()) as s:
         job = await s.get(ScanJob, job_id)
         if not job:
             logger.error("run_scan: job %s not found", job_id)
@@ -184,7 +185,7 @@ async def run_scan(job_id: uuid.UUID) -> None:
         await _set_progress(job_id, 90)
 
     # ── 5. Persist results ────────────────────────────────────────────────────
-    async with AsyncSessionLocal() as s:
+    async with AsyncSession(get_engine()) as s:
         job = await s.get(ScanJob, job_id)
         if not job:
             return

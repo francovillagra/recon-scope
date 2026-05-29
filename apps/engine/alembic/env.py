@@ -1,9 +1,9 @@
-import asyncio
 import os
 import sys
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy import create_engine
 from sqlalchemy.ext.asyncio import create_async_engine
 
 # Make app importable from the alembic/ directory
@@ -32,25 +32,24 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def do_run_migrations(connection):
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata,
-        compare_type=True,
-    )
-    with context.begin_transaction():
-        context.run_migrations()
-
-
-async def run_async_migrations() -> None:
-    engine = create_async_engine(_make_url(settings.DATABASE_URL))
-    async with engine.begin() as conn:
-        await conn.run_sync(do_run_migrations)
-    await engine.dispose()
-
-
 def run_migrations_online() -> None:
-    asyncio.run(run_async_migrations())
+    sync_url = settings.DATABASE_URL.replace(
+        "postgresql+asyncpg://", "postgresql+psycopg2://"
+    ).replace("?ssl=require", "")
+
+    connectable = create_engine(
+        sync_url,
+        connect_args={"sslmode": "require"},
+    )
+
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            compare_type=True,
+        )
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():

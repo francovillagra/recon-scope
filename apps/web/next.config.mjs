@@ -1,12 +1,13 @@
+import path from 'path'
 import { fileURLToPath } from 'url'
-import { dirname, join } from 'path'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: {
-    outputFileTracingRoot: join(__dirname, '../../'),
+  outputFileTracingRoot: path.join(__dirname, '../../'),
+  outputFileTracingExcludes: {
+    '*': ['**/.next/server/app/(dashboard)/**'],
   },
 }
 

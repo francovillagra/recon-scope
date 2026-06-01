@@ -18,6 +18,7 @@ email-validator>=2.1.0   # required by Pydantic EmailStr
 # Auth
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
+bcrypt==4.0.1
 
 # Domain verification
 dnspython>=2.6.0

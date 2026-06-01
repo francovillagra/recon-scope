@@ -33,9 +33,12 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    sync_url = settings.DATABASE_URL.replace(
-        "postgresql+asyncpg://", "postgresql+psycopg2://"
-    ).replace("?ssl=require", "")
+    if settings.MIGRATION_DATABASE_URL:
+        sync_url = settings.MIGRATION_DATABASE_URL
+    else:
+        sync_url = str(settings.DATABASE_URL).replace(
+            "postgresql+asyncpg://", "postgresql+psycopg2://"
+        ).replace("?ssl=require", "")
 
     connectable = create_engine(
         sync_url,

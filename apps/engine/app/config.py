@@ -7,6 +7,7 @@ class Settings(BaseSettings):
 
     # Database — use postgresql+asyncpg:// scheme for async driver
     DATABASE_URL: str
+    MIGRATION_DATABASE_URL: str = ""
 
     # Auth
     JWT_SECRET: str

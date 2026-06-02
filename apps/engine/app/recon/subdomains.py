@@ -17,7 +17,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 CRTSH_URL = "https://crt.sh/?q=%.{domain}&output=json"
-CRTSH_TIMEOUT = 30.0
+CRTSH_TIMEOUT = httpx.Timeout(30.0, connect=10.0)
 DNS_CONCURRENCY = 50  # max parallel A-record lookups
 
 

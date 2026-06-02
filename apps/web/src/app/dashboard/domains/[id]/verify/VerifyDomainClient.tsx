@@ -1,14 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import type { Domain, DomainVerificationInstructions, VerificationMethod } from '@recon/core'
 import { domains as domainsApi, ApiError } from '@/lib/api'
 import { VerificationInstructions } from '@/components/domains/VerificationInstructions'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 
-export function VerifyDomainClient({ id }: { id: string }) {
+export function VerifyDomainClient() {
+  const { id } = useParams<{ id: string }>()
   const router = useRouter()
 
   const [domain, setDomain] = useState<Domain | null>(null)

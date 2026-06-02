@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { scans, domains as domainsApi, ApiError } from '@/lib/api'
 import type {
   ScanJob,
@@ -69,7 +69,8 @@ function ValidBadge({ value }: { value: boolean | null }) {
   )
 }
 
-export function ScanClient({ id }: { id: string }) {
+export function ScanClient() {
+  const { id } = useParams<{ id: string }>()
   const router = useRouter()
 
   const [domainName, setDomainName] = useState('')

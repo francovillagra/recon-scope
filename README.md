@@ -4,7 +4,7 @@
 
 # recon-scope
 
-> Plataforma de reconocimiento automatizado para assessments de seguridad autorizados.
+> Plataforma de reconocimiento automatizado para auditorías de seguridad autorizadas.
 
 **Live demo:** [recon-scope.vercel.app](https://recon-scope.vercel.app) · **Engine API:** [reconapi-production.up.railway.app](https://reconapi-production.up.railway.app/api/v1/health)
 

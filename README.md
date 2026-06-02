@@ -1,10 +1,12 @@
 ![recon-scope](./assets/banner.svg)
 
-![Python](https://img.shields.io/badge/Python-3.12-3fb950?style=flat-square&logo=python&logoColor=white&labelColor=0d1117) ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-3fb950?style=flat-square&logo=fastapi&logoColor=white&labelColor=0d1117) ![Next.js](https://img.shields.io/badge/Next.js-14-3fb950?style=flat-square&logo=next.js&logoColor=white&labelColor=0d1117) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3fb950?style=flat-square&logo=postgresql&logoColor=white&labelColor=0d1117) ![Railway](https://img.shields.io/badge/Deploy-Railway-3fb950?style=flat-square&logo=railway&logoColor=white&labelColor=0d1117)
+![Python](https://img.shields.io/badge/Python-3.12-3fb950?style=flat-square&logo=python&logoColor=white&labelColor=0d1117) ![FastAPI](https://img.shields.io/badge/FastAPI-0.110-3fb950?style=flat-square&logo=fastapi&logoColor=white&labelColor=0d1117) ![Next.js](https://img.shields.io/badge/Next.js-15-3fb950?style=flat-square&logo=next.js&logoColor=white&labelColor=0d1117) ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-3fb950?style=flat-square&logo=postgresql&logoColor=white&labelColor=0d1117) ![Railway](https://img.shields.io/badge/Deploy-Railway-3fb950?style=flat-square&logo=railway&logoColor=white&labelColor=0d1117)
 
 # recon-scope
 
 > Plataforma de reconocimiento automatizado para assessments de seguridad autorizados.
+
+**Live demo:** [recon-scope.vercel.app](https://recon-scope.vercel.app) · **Engine API:** [reconapi-production.up.railway.app](https://reconapi-production.up.railway.app/api/v1/health)
 
 ---
 
@@ -102,7 +104,7 @@ sequenceDiagram
 
 | Capa | Tecnología |
 |---|---|
-| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS v3, Recharts |
+| Frontend | Next.js 15 (App Router), TypeScript, Tailwind CSS v3, Recharts |
 | Backend | FastAPI, Python 3.12, asyncio, SQLAlchemy 2 (async), Alembic |
 | Base de datos | PostgreSQL 16, asyncpg |
 | Infraestructura | Docker, Docker Compose |
@@ -121,12 +123,24 @@ Los deployments en producción no devuelven stack traces. Todas las excepciones 
 
 ## Inicio rápido
 
-### Prerequisitos
+### Producción (recomendado)
+
+| Servicio | URL |
+|---|---|
+| Dashboard web | https://recon-scope.vercel.app |
+| Engine API | https://reconapi-production.up.railway.app |
+| Health check | https://reconapi-production.up.railway.app/api/v1/health |
+
+Registrate en el dashboard, verificá la propiedad de tu dominio y lanzá el primer scan.
+
+### Desarrollo local
+
+#### Prerequisitos
 
 - Docker + Docker Compose
 - Archivo `.env` (copiar `.env.example`)
 
-### 1. Configurar entorno
+#### 1. Configurar entorno
 
 ```bash
 cp .env.example .env
@@ -134,7 +148,7 @@ cp .env.example .env
 # python -c "import secrets; print(secrets.token_hex(64))"
 ```
 
-### 2. Levantar todos los servicios
+#### 2. Levantar todos los servicios
 
 ```bash
 docker compose -f infra/docker-compose.yml up --build

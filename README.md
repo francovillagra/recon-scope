@@ -245,12 +245,19 @@ Ambos devuelven `{ token, user }`.
 
 ## Roadmap
 
-- [ ] DNS brute-force activo (detrás del gate de verificación de propiedad)
-- [ ] Integración con la API de Shodan para inteligencia pasiva de puertos
-- [ ] Scans recurrentes programados con detección de cambios
-- [ ] Notificaciones por Slack / webhook ante nuevos findings
-- [ ] Opción de deploy en AWS (ECS + RDS)
-- [ ] Integración de preparación para CompTIA Security+ (modo estudio)
+Features planned to evolve recon-scope from a portfolio project into a production-ready platform:
+
+- [ ] Email verification on registration (Resend / SendGrid)
+- [ ] Password reset flow via email
+- [ ] Two-factor authentication (TOTP / authenticator app)
+- [ ] Dark mode for the dashboard
+- [ ] Active DNS brute-force enumeration (behind ownership gate)
+- [ ] Shodan API integration for passive port intelligence
+- [ ] Scheduled recurring scans with change detection
+- [ ] Slack / webhook notifications on new findings
+- [ ] Rate limiting backed by Redis (currently in-memory)
+- [ ] Full Row Level Security via Supabase Auth migration
+- [ ] AWS deployment option (ECS + RDS)
 
 ---
 

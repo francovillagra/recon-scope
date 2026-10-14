@@ -22,7 +22,7 @@ def _skipped_hosts(detail: dict) -> dict:
     return {
         f["evidence"]["host"]: f["evidence"]["reason"]
         for f in detail["findings"]
-        if f["category"] == "other" and f["severity"] == "info" and "reason" in f["evidence"]
+        if f["category"] == "other" and f["severity"] == "info" and "host" in f["evidence"]
     }
 
 

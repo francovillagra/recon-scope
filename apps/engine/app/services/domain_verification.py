@@ -1,14 +1,27 @@
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import dns.asyncresolver
 import dns.exception
 import httpx
 
+from app.config import settings
 from app.recon.netguard import BlockedTarget
 from app.recon.safe_http import fetch_in_scope
 
 _FETCH_TIMEOUT = 8.0  # seconds
 _TOKEN_MAX_BYTES = 4096  # el archivo solo contiene el token: un cuerpo más grande no puede ser el token
+
+
+def verification_expired(domain) -> bool:
+    """¿Venció la verificación? Con VERIFICATION_MAX_AGE_DAYS=0 (por defecto) nunca vence. Un dominio puede cambiar
+    de manos después de verificarse: pasado el plazo hay que volver a demostrar el control."""
+    days = settings.VERIFICATION_MAX_AGE_DAYS
+    if days <= 0:
+        return False
+    if domain.verified_at is None:
+        return True
+    return domain.verified_at < datetime.now(timezone.utc) - timedelta(days=days)
 
 
 async def verify_dns_txt(domain: str, token: str) -> bool:

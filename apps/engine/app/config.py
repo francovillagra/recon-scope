@@ -27,10 +27,15 @@ class Settings(BaseSettings):
     # Solo para desarrollo o redes propias: permite escanear/verificar direcciones privadas (loopback, 10/8...).
     # En un despliegue compartido tiene que quedar en false: es lo que impide usar el motor para mirar su red interna.
     ALLOW_PRIVATE_TARGETS: bool = False
-    SCAN_MAX_CONCURRENT: int = 3
-    SCAN_MAX_SECONDS: int = 900
-    SCAN_MAX_HOSTS: int = 25
-    SCAN_MAX_SUBDOMAINS: int = 500
+    SCAN_MAX_CONCURRENT: int = 3  # escaneos corriendo a la vez en este proceso; el resto espera en "queued"
+    SCAN_MAX_PER_USER: int = 2  # escaneos en curso (en cola o corriendo) por usuario
+    SCAN_MAX_SECONDS: int = 900  # tope de duración; al llegar, el escaneo guarda lo que tiene y avisa que es parcial
+    SCAN_MAX_HOSTS: int = 25  # hosts distintos que se escanean activamente (puertos / huella) por escaneo
+    SCAN_MAX_SUBDOMAINS: int = 500  # nombres que se resuelven por escaneo
+    MAX_DOMAINS_PER_USER: int = 25
+    # Días que vale una verificación de dominio. 0 = no vence (comportamiento anterior). Recomendado en un servicio
+    # público: 90. Al vencer hay que volver a verificar (el registro TXT publicado sigue sirviendo).
+    VERIFICATION_MAX_AGE_DAYS: int = 0
 
 
 settings = Settings()

@@ -257,7 +257,7 @@ async def test_subdomains_resolving_to_internal_addresses_lose_their_address_and
         return answers[hostname]
 
     monkeypatch.setattr(subdomains, "_resolve_a", resolve)
-    found = {r.hostname: (r.resolved_ip, r.skipped_reason) for r in await subdomains.enumerate_subdomains("site.test")}
+    found = {r.hostname: (r.resolved_ip, r.skipped_reason) for r in (await subdomains.enumerate_subdomains("site.test")).results}
     assert found == {
         "pub.site.test": (PUBLIC_IP, None),
         "internal.site.test": (None, "non_public_address"),
@@ -275,5 +275,5 @@ async def test_with_the_flag_on_internal_addresses_are_kept(monkeypatch):
         return ["10.1.2.3"]
 
     monkeypatch.setattr(subdomains, "_resolve_a", resolve)
-    (result,) = await subdomains.enumerate_subdomains("site.test")
+    (result,) = (await subdomains.enumerate_subdomains("site.test")).results
     assert (result.resolved_ip, result.skipped_reason) == ("10.1.2.3", None)

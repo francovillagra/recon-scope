@@ -7,7 +7,7 @@ from app.models.port import Port
 from app.models.scan_job import ScanJob
 from app.models.subdomain import Subdomain
 from app.recon.ports import PortResult
-from app.recon.subdomains import SubdomainResult
+from app.recon.subdomains import SubdomainEnumeration, SubdomainResult
 from app.services import scan_runner
 
 from .helpers import make_domain, make_job, make_user
@@ -73,9 +73,9 @@ async def test_a_failure_while_saving_marks_the_job_failed_instead_of_running(mo
     domain = await make_domain(user)
     job = await make_job(user, domain, config={"modules": ["subdomains"], "port_range": "top-100", "timeout_seconds": 5})
 
-    async def fake_enumerate(domain_name):
+    async def fake_enumerate(domain_name, limit=None):
         # hostname inválido para la columna: fuerza un error al persistir
-        return [SubdomainResult(hostname="x" * 10, resolved_ip="not-an-ip")]
+        return SubdomainEnumeration([SubdomainResult(hostname="x" * 10, resolved_ip="not-an-ip")], 1)
 
     monkeypatch.setattr(scan_runner, "enumerate_subdomains", fake_enumerate)
 

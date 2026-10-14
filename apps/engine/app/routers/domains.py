@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_session
 from app.dependencies import get_current_user
 from app.models.audit_log import AuditLog
@@ -32,12 +33,18 @@ from app.schemas.domain import (
 )
 from app.recon.netguard import BlockedTarget
 from app.schemas.scan import FindingsBySeverityCount, ScanHistoryEntry
-from app.services.domain_verification import verify_dns_txt, verify_well_known_file
+from app.ratelimit import SlidingWindowLimiter
+from app.services.domain_verification import verification_expired, verify_dns_txt, verify_well_known_file
 
 router = APIRouter(prefix="/domains", tags=["domains"])
 
 AuthDep = Annotated[User, Depends(get_current_user)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+# Cada verificación hace consultas DNS y una petición HTTPS a un dominio que puede ser de cualquiera (registrar un
+# dominio no exige demostrar nada): sin tope se podía usar para bombardear a un tercero. 20 intentos cada 10 minutos
+# alcanzan de sobra para esperar que se propague un registro TXT.
+_verify_limiter = SlidingWindowLimiter(limit=20, window_seconds=600)
 
 
 def _build_instructions(domain_name: str, token: str) -> VerificationInstructions:
@@ -109,6 +116,13 @@ async def create_domain(
     current_user: AuthDep,
     session: SessionDep,
 ) -> CreateDomainResponse:
+    registered = await session.scalar(select(func.count()).select_from(Domain).where(Domain.user_id == current_user.id))
+    if registered >= settings.MAX_DOMAINS_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Domain limit reached ({settings.MAX_DOMAINS_PER_USER}). Delete a domain to add another.",
+        )
+
     token = f"recon-verify-{uuid.uuid4()}"
     domain = Domain(
         user_id=current_user.id,
@@ -172,10 +186,18 @@ async def verify_domain(
 ) -> VerifyResponse:
     domain = await _get_owned_domain(domain_id, current_user, session)
 
-    if domain.verification_status == "verified":
+    if domain.verification_status == "verified" and not verification_expired(domain):
         return VerifyResponse(
             domain=DomainOut.model_validate(domain),
             already_verified=True,
+        )
+
+    wait = _verify_limiter.hit(str(current_user.id))
+    if wait is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many verification attempts. Wait a few minutes and try again.",
+            headers={"Retry-After": str(wait)},
         )
 
     non_public = False

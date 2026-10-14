@@ -10,7 +10,7 @@ import ipaddress
 import json
 import logging
 import re
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import dns.asyncresolver
 import dns.exception
@@ -100,19 +100,28 @@ async def _fetch_crtsh(domain: str) -> set[str]:
     return hostnames
 
 
-async def enumerate_subdomains(domain: str) -> list[SubdomainResult]:
+class SubdomainEnumeration(NamedTuple):
+    results: list[SubdomainResult]
+    total_found: int  # nombres distintos que devolvió crt.sh; si es mayor que len(results), se aplicó el tope
+
+
+async def enumerate_subdomains(domain: str, limit: Optional[int] = None) -> SubdomainEnumeration:
     """
     Entry point for the Phase 1 subdomain module.
 
     1. Fetches hostnames from crt.sh (raises on HTTP/network error).
     2. Resolves A records concurrently (best-effort; non-resolving → resolved_ip=None).
 
-    Returns a deduplicated list of SubdomainResult.
+    Con `limit` solo se resuelven los primeros `limit` nombres (los más cortos primero: el dominio, www, mail...),
+    para que un dominio con miles de certificados no convierta un escaneo en miles de consultas DNS.
     """
-    hostnames = await _fetch_crtsh(domain)
+    hostnames = sorted(await _fetch_crtsh(domain), key=lambda h: (h.count("."), h))
+    total = len(hostnames)
+    if limit is not None:
+        hostnames = hostnames[:limit]
 
     if not hostnames:
-        return []
+        return SubdomainEnumeration([], total)
 
     semaphore = asyncio.Semaphore(DNS_CONCURRENCY)
 
@@ -121,5 +130,5 @@ async def enumerate_subdomains(domain: str) -> list[SubdomainResult]:
             addresses = await _resolve_a(h)
         return _classify(h, addresses)
 
-    results = await asyncio.gather(*[_resolve_bounded(h) for h in sorted(hostnames)])
-    return list(results)
+    results = await asyncio.gather(*[_resolve_bounded(h) for h in hostnames])
+    return SubdomainEnumeration(list(results), total)

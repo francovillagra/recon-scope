@@ -28,7 +28,7 @@ async def register(
 ) -> AuthResponse:
     if not body.tos_accepted:
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail="Must accept Terms of Service",
         )
 

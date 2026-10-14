@@ -21,7 +21,7 @@ class CreateDomainRequest(BaseModel):
     @classmethod
     def validate_domain(cls, v: str) -> str:
         v = v.strip().lower()
-        if not _DOMAIN_RE.match(v):
+        if len(v) > 253 or not _DOMAIN_RE.match(v):  # 253 = máximo de un nombre DNS
             raise ValueError("Invalid domain name (e.g. example.com)")
         return v
 

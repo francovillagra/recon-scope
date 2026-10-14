@@ -60,6 +60,15 @@ class SlidingWindowLimiter:
             self.record(key, now)
         return wait
 
+    def refund(self, key: str) -> None:
+        """Devuelve el último cupo reservado de `key` (se reservó con `hit` y al final no se gastó)."""
+        with self._lock:
+            events = self._events.get(key)
+            if events:
+                events.pop()
+                if not events:
+                    del self._events[key]
+
     def clear(self, key: str) -> None:
         with self._lock:
             self._events.pop(key, None)

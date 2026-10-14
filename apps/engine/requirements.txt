@@ -1,28 +1,35 @@
+# Versiones fijas: son las mismas con las que corren las pruebas (Python 3.12 y 3.13), así lo que se prueba es lo
+# que se despliega. Para actualizar: cambiá la versión, corré las pruebas y subí el cambio (Dependabot lo propone).
+# Las demás dependencias (anyio, h11, etc.) las resuelve pip; abajo se fijan solo las dos que el código usa por
+# dentro (starlette y httpcore).
+
 # Web framework
-fastapi>=0.111.0
-uvicorn[standard]>=0.30.0
+fastapi==0.143.1
+starlette==1.8.0          # middleware y manejo de excepciones de app/security.py y app/main.py
+uvicorn[standard]==0.54.0
 
 # Database — async SQLAlchemy + asyncpg driver
-sqlalchemy[asyncio]>=2.0.30
-asyncpg>=0.29.0
+sqlalchemy[asyncio]==2.1.4
+asyncpg==0.32.0
 
 # Migrations
-alembic>=1.13.0
-psycopg2-binary>=2.9.9
+alembic==1.20.0
+psycopg2-binary==2.9.13
 
 # Settings & validation
-pydantic>=2.7.0
-pydantic-settings>=2.3.0
-email-validator>=2.1.0   # required by Pydantic EmailStr
+pydantic==2.14.1
+pydantic-settings==2.16.0
+email-validator==2.3.0    # required by Pydantic EmailStr
 
 # Auth
-PyJWT>=2.8.0
-passlib[bcrypt]>=1.7.4
-bcrypt==4.0.1
+PyJWT==2.15.1
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1             # passlib 1.7.4 no es compatible con bcrypt >= 4.1
 
-# Domain verification
-dnspython>=2.6.0
-httpx>=0.27.0
+# Domain verification / network checks
+dnspython==2.9.0
+httpx==0.28.1
+httpcore==1.0.9           # app/recon/safe_http.py reemplaza su backend de red; hay pruebas con conexiones reales
 
 # Required by uvicorn[standard] / starlette
-python-multipart>=0.0.9
+python-multipart==0.0.32

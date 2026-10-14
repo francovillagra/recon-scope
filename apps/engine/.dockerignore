@@ -1,0 +1,18 @@
+# Lo que no tiene que terminar dentro de la imagen. Sobre todo los .env: `COPY . .` los metería en las capas.
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+tests/
+pytest.ini
+requirements-dev.txt
+debug_imports.py
+Dockerfile
+.dockerignore
+README.md

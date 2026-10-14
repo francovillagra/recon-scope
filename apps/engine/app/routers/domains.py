@@ -34,6 +34,7 @@ from app.schemas.domain import (
 from app.recon.netguard import BlockedTarget
 from app.schemas.scan import FindingsBySeverityCount, ScanHistoryEntry
 from app.ratelimit import SlidingWindowLimiter
+from app.security import client_ip
 from app.services.domain_verification import verification_expired, verify_dns_txt, verify_well_known_file
 
 router = APIRouter(prefix="/domains", tags=["domains"])
@@ -86,7 +87,7 @@ async def _write_audit(
         user_id=user_id,
         action=action,
         target=target,
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
         metadata_=metadata or {},
     )
     session.add(log)

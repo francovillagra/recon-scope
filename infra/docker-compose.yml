@@ -53,11 +53,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}
       MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET: ${JWT_SECRET:?Definí JWT_SECRET en .env (mínimo 32 caracteres; python -c "import secrets; print(secrets.token_hex(64))")}
       JWT_EXPIRES_DAYS: ${JWT_EXPIRES_DAYS:-7}
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
       CORS_ORIGINS: '["http://localhost:3000"]'
       DEBUG: ${DEBUG:-false}
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-0}
     ports:
       - "8000:8000"
     depends_on:

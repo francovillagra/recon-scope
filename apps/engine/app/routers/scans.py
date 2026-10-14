@@ -42,6 +42,7 @@ from app.schemas.scan import (
     TlsCertificateOut,
 )
 from app.ratelimit import SlidingWindowLimiter
+from app.security import client_ip
 from app.services.domain_verification import verification_expired
 from app.services.scan_runner import run_scan
 
@@ -193,7 +194,7 @@ async def create_scan(
         user_id=current_user.id,
         action="scan_started",
         target=domain.domain,
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
         metadata_={"modules": body.modules},
     ))
 

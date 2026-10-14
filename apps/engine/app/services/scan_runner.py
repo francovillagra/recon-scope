@@ -12,10 +12,13 @@ Progress checkpoints by active module set:
 """
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import httpx
+from sqlalchemy import func, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from app.config import settings
 from app.database import get_engine
 from app.models.audit_log import AuditLog
 from app.models.http_fingerprint import HttpFingerprint
@@ -33,6 +36,7 @@ from app.recon.fingerprint import (
     fingerprint_tls,
 )
 from app.recon.ports import PortResult, scan_ports
+from app.recon.sanitize import clean_json, clean_text
 from app.recon.subdomains import SubdomainResult, enumerate_subdomains
 from app.services.findings_engine import generate_findings
 
@@ -68,6 +72,53 @@ def _checkpoints(
     return None, None, None
 
 
+def _public_error(phase: str, exc: Exception) -> str:
+    """Mensaje para el usuario: la causa técnica queda en el log y en el registro de auditoría, no en la API."""
+    if phase == "subdomain enumeration" and isinstance(exc, httpx.HTTPError):
+        return "Subdomain enumeration failed: the certificate transparency source (crt.sh) is unavailable. Try again later."
+    return f"The {phase} step failed. Try again, or run fewer modules."
+
+
+async def _mark_failed(job_id: uuid.UUID, user_id: uuid.UUID, target: str, public_message: str, detail: str) -> None:
+    try:
+        async with AsyncSession(get_engine()) as s:
+            job = await s.get(ScanJob, job_id)
+            if job is None:
+                return
+            job.status = "failed"
+            job.error_message = public_message
+            job.completed_at = datetime.now(timezone.utc)
+            s.add(AuditLog(
+                user_id=user_id,
+                action="scan_failed",
+                target=target,
+                metadata_={"job_id": str(job_id), "error": clean_text(detail)[:200]},
+            ))
+            await s.commit()
+    except Exception:
+        logger.exception("Scan %s: could not record the failure", job_id)
+
+
+async def recover_stale_jobs() -> int:
+    """Marca como fallidos los escaneos que quedaron 'queued'/'running' sin que nadie los esté ejecutando."""
+    max_age = timedelta(seconds=settings.SCAN_MAX_SECONDS * 2 + 60)
+    async with AsyncSession(get_engine()) as s:
+        result = await s.execute(
+            update(ScanJob)
+            .where(
+                ScanJob.status.in_(("queued", "running")),
+                func.coalesce(ScanJob.started_at, ScanJob.created_at) < func.now() - max_age,
+            )
+            .values(
+                status="failed",
+                error_message="The scan was interrupted (the server restarted or the job timed out). Start it again.",
+                completed_at=func.now(),
+            )
+        )
+        await s.commit()
+        return result.rowcount or 0
+
+
 async def run_scan(job_id: uuid.UUID) -> None:
     # ── 1. Mark running ───────────────────────────────────────────────────────
     async with AsyncSession(get_engine()) as s:
@@ -98,6 +149,7 @@ async def run_scan(job_id: uuid.UUID) -> None:
     logger.info("Scan %s started for %s (modules=%s)", job_id, domain_name, modules)
 
     error: Optional[Exception] = None
+    error_phase = ""
 
     # ── 2. Subdomain enumeration ──────────────────────────────────────────────
     sub_results: list[SubdomainResult] = []
@@ -109,7 +161,7 @@ async def run_scan(job_id: uuid.UUID) -> None:
                 await _set_progress(job_id, p_subs)
         except Exception as exc:
             logger.exception("Scan %s failed during subdomain enumeration", job_id)
-            error = exc
+            error, error_phase = exc, "subdomain enumeration"
 
     # ── 3. Port scanning ──────────────────────────────────────────────────────
     port_results: list[PortResult] = []
@@ -138,7 +190,7 @@ async def run_scan(job_id: uuid.UUID) -> None:
                 await _set_progress(job_id, p_ports)
         except Exception as exc:
             logger.exception("Scan %s failed during port scan", job_id)
-            error = exc
+            error, error_phase = exc, "port scan"
 
     elif run_subs and not run_fp and not error:
         # Subs-only: advance to pre-persist checkpoint
@@ -178,95 +230,105 @@ async def run_scan(job_id: uuid.UUID) -> None:
                 await _set_progress(job_id, p_fp)
         except Exception as exc:
             logger.exception("Scan %s failed during fingerprinting", job_id)
-            error = exc
+            error, error_phase = exc, "fingerprinting"
 
     elif run_ports and not run_fp and not error:
         # Ports-only: advance to pre-persist checkpoint
         await _set_progress(job_id, 90)
 
     # ── 5. Persist results ────────────────────────────────────────────────────
+    if error:
+        logger.warning("Scan %s failed: %s", job_id, error)
+        await _mark_failed(job_id, user_id, domain_name, _public_error(error_phase, error), str(error))
+        return
+
+    try:
+        await _persist_results(
+            job_id, user_id, domain_id, domain_name,
+            sub_results, port_results, fp_results, tls_results,
+        )
+    except Exception as exc:
+        logger.exception("Scan %s: saving the results failed", job_id)
+        await _mark_failed(job_id, user_id, domain_name, _public_error("result saving", exc), str(exc))
+
+
+async def _persist_results(
+    job_id: uuid.UUID,
+    user_id: uuid.UUID,
+    domain_id: uuid.UUID,
+    domain_name: str,
+    sub_results: list[SubdomainResult],
+    port_results: list[PortResult],
+    fp_results: list[tuple[HttpFingerprintResult, list[TechResult]]],
+    tls_results: list[TlsResult],
+) -> None:
     async with AsyncSession(get_engine()) as s:
         job = await s.get(ScanJob, job_id)
         if not job:
             return
 
-        if error:
-            job.status = "failed"
-            job.error_message = str(error)[:500]
-            job.completed_at = datetime.now(timezone.utc)
-            s.add(AuditLog(
-                user_id=user_id,
-                action="scan_failed",
-                target=domain_name,
-                metadata_={"job_id": str(job_id), "error": str(error)[:200]},
+        for r in sub_results:
+            s.add(Subdomain(
+                scan_job_id=job_id, domain_id=domain_id,
+                hostname=clean_text(r.hostname), source=r.source, resolved_ip=r.resolved_ip,
             ))
-            logger.warning("Scan %s failed: %s", job_id, error)
-        else:
-            for r in sub_results:
-                s.add(Subdomain(
-                    scan_job_id=job_id, domain_id=domain_id,
-                    hostname=r.hostname, source=r.source, resolved_ip=r.resolved_ip,
-                ))
-            for r in port_results:
-                s.add(Port(
-                    scan_job_id=job_id, domain_id=domain_id,
-                    host=r.host, port=r.port, protocol=r.protocol,
-                    state=r.state, service=r.service, banner=r.banner,
-                ))
-            fp_id_map: dict[str, uuid.UUID] = {}
-            for fp, techs in fp_results:
-                fp_row = HttpFingerprint(
-                    scan_job_id=job_id, domain_id=domain_id,
-                    url=fp.url, status_code=fp.status_code,
-                    server_header=fp.server_header, title=fp.title,
-                    response_headers=fp.response_headers,
-                )
-                s.add(fp_row)
-                await s.flush()  # get fp_row.id
-                fp_id_map[fp.url] = fp_row.id
-                for t in techs:
-                    s.add(Technology(
-                        scan_job_id=job_id, domain_id=domain_id,
-                        http_fingerprint_id=fp_row.id,
-                        name=t.name, category=t.category,
-                        version=t.version, confidence=t.confidence,
-                    ))
-            for tls in tls_results:
-                s.add(TlsCertificate(
-                    scan_job_id=job_id, domain_id=domain_id,
-                    host=tls.host, issuer=tls.issuer, subject=tls.subject,
-                    valid_from=tls.valid_from, valid_to=tls.valid_to,
-                    is_valid=tls.is_valid,
-                    signature_algorithm=tls.signature_algorithm,
-                    san=tls.san,
-                ))
-
-            await s.flush()  # ensure all rows visible before findings query
-
-            # Generate and persist findings
-            new_findings = await generate_findings(job_id, domain_id, s)
-            for f in new_findings:
-                s.add(f)
-
-            job.status = "completed"
-            job.progress = 100
-            job.completed_at = datetime.now(timezone.utc)
-            s.add(AuditLog(
-                user_id=user_id,
-                action="scan_completed",
-                target=domain_name,
-                metadata_={
-                    "job_id": str(job_id),
-                    "subdomains_found": len(sub_results),
-                    "open_ports_found": len(port_results),
-                    "fingerprints": len(fp_results),
-                    "findings": len(new_findings),
-                },
+        for r in port_results:
+            s.add(Port(
+                scan_job_id=job_id, domain_id=domain_id,
+                host=clean_text(r.host), port=r.port, protocol=r.protocol,
+                state=r.state, service=r.service, banner=clean_text(r.banner),
             ))
-            logger.info(
-                "Scan %s completed: %d subs, %d ports, %d fingerprints, %d findings for %s",
-                job_id, len(sub_results), len(port_results),
-                len(fp_results), len(new_findings), domain_name,
+        for fp, techs in fp_results:
+            fp_row = HttpFingerprint(
+                scan_job_id=job_id, domain_id=domain_id,
+                url=clean_text(fp.url), status_code=fp.status_code,
+                server_header=clean_text(fp.server_header), title=clean_text(fp.title),
+                response_headers=clean_json(fp.response_headers),
             )
+            s.add(fp_row)
+            await s.flush()  # get fp_row.id
+            for t in techs:
+                s.add(Technology(
+                    scan_job_id=job_id, domain_id=domain_id,
+                    http_fingerprint_id=fp_row.id,
+                    name=t.name, category=t.category,
+                    version=clean_text(t.version), confidence=t.confidence,
+                ))
+        for tls in tls_results:
+            s.add(TlsCertificate(
+                scan_job_id=job_id, domain_id=domain_id,
+                host=clean_text(tls.host), issuer=clean_text(tls.issuer), subject=clean_text(tls.subject),
+                valid_from=tls.valid_from, valid_to=tls.valid_to,
+                is_valid=tls.is_valid,
+                signature_algorithm=tls.signature_algorithm,
+                san=clean_json(tls.san),
+            ))
 
+        await s.flush()  # ensure all rows visible before findings query
+
+        # Generate and persist findings
+        new_findings = await generate_findings(job_id, domain_id, s)
+        for f in new_findings:
+            s.add(f)
+
+        job.status = "completed"
+        job.progress = 100
+        job.completed_at = datetime.now(timezone.utc)
+        s.add(AuditLog(
+            user_id=user_id,
+            action="scan_completed",
+            target=domain_name,
+            metadata_={
+                "job_id": str(job_id),
+                "subdomains_found": len(sub_results),
+                "open_ports_found": len(port_results),
+                "fingerprints": len(fp_results),
+                "findings": len(new_findings),
+            },
+        ))
+        logger.info(
+            "Scan %s completed: %d subs, %d ports, %d fingerprints, %d findings for %s",
+            job_id, len(sub_results), len(port_results),
+            len(fp_results), len(new_findings), domain_name,
+        )
         await s.commit()

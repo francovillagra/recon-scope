@@ -53,6 +53,12 @@ class SubdomainOut(BaseModel):
     resolved_ip: Optional[str]
     created_at: datetime
 
+    @field_validator("resolved_ip", mode="before")
+    @classmethod
+    def _ip_as_text(cls, v):
+        # La columna es INET: asyncpg la devuelve como ipaddress.IPv4Address/IPv6Address, no como str.
+        return None if v is None else str(v)
+
 
 class PortOut(BaseModel):
     model_config = {"from_attributes": True}

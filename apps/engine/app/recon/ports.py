@@ -5,6 +5,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from app.recon.port_lists import FULL, TOP_100, TOP_1000
+from app.recon.sanitize import clean_text
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ async def _probe(
                 timeout=BANNER_TIMEOUT,
             )
             if data:
-                banner = data.decode("utf-8", errors="replace").strip()[:500]
+                banner = clean_text(data.decode("utf-8", errors="replace").strip()[:500])
         except Exception:
             pass
 

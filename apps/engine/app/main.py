@@ -7,12 +7,21 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.routers import auth, domains, health, scans
+from app.services.scan_runner import recover_stale_jobs
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Los escaneos corren dentro del proceso: si el servidor se reinició a mitad de uno, el trabajo quedó
+    # 'running' para siempre. Sin base de datos disponible el motor igual arranca.
+    try:
+        recovered = await recover_stale_jobs()
+        if recovered:
+            logger.warning("Marked %d interrupted scan(s) as failed", recovered)
+    except Exception:
+        logger.warning("Could not check for interrupted scans at startup", exc_info=True)
     yield
 
 

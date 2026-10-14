@@ -38,6 +38,8 @@ services:
     command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}
+      # El Postgres del compose no tiene SSL: las migraciones lo piden por defecto, acá se desactiva a propósito.
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}?sslmode=disable
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,6 +52,7 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_DAYS: ${JWT_EXPIRES_DAYS:-7}
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}

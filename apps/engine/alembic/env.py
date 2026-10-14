@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.config import settings
-from app.database import _make_url
+from app.database import _make_url, migration_engine_args
 from app.models import Base  # imports all models so metadata is populated
 
 config = context.config
@@ -33,17 +33,10 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    if settings.MIGRATION_DATABASE_URL:
-        sync_url = settings.MIGRATION_DATABASE_URL
-    else:
-        sync_url = str(settings.DATABASE_URL).replace(
-            "postgresql+asyncpg://", "postgresql+psycopg2://"
-        ).replace("?ssl=require", "")
-
-    connectable = create_engine(
-        sync_url,
-        connect_args={"sslmode": "require"},
+    sync_url, connect_args = migration_engine_args(
+        settings.DATABASE_URL, settings.MIGRATION_DATABASE_URL
     )
+    connectable = create_engine(sync_url, connect_args=connect_args)
 
     with connectable.connect() as connection:
         context.configure(

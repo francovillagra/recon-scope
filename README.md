@@ -265,7 +265,7 @@ Features planned to evolve recon-scope from a portfolio project into a productio
 
 **Franco Villagra** — Desarrollador · Ciberseguridad
 
-- Portfolio: [francoverse.vercel.app](https://francoverse.vercel.app)
+- Portfolio: [francoverse.fvillagra-dev.workers.dev](https://francoverse.fvillagra-dev.workers.dev)
 - GitHub: [@francovillagra](https://github.com/francovillagra)
 
 ---

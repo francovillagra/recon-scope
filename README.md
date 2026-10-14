@@ -173,6 +173,7 @@ El contenedor del engine ejecuta `alembic upgrade head` automáticamente antes d
 | `BCRYPT_ROUNDS` | No | `12` | Factor de trabajo bcrypt |
 | `CORS_ORIGINS` | No | `["http://localhost:3000"]` | Array JSON de orígenes permitidos |
 | `DEBUG` | No | `false` | Habilita `/docs`, `/redoc` y errores detallados |
+| `ALLOW_PRIVATE_TARGETS` | No | `false` | Si es `false`, el engine solo se conecta a direcciones públicas de Internet: un dominio verificado cuyo DNS apunta a `127.0.0.1`, `10.x`, `169.254.169.254`, etc. se omite y se informa. Ponelo en `true` **solo** en un despliegue privado donde escanear tu propia red sea el objetivo; nunca en un servicio compartido |
 | `NEXT_PUBLIC_API_URL` | Sí (web) | `http://localhost:8000` | URL base del engine visible desde el browser |
 
 ---

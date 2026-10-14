@@ -4,8 +4,10 @@ import ssl
 from datetime import datetime, timezone
 from typing import Optional
 
-import httpx
 from pydantic import BaseModel
+
+from app.recon.netguard import BlockedTarget, connect_any, resolve_public
+from app.recon.safe_http import fetch_in_scope
 
 _TITLE_RE = re.compile(r"<title[^>]*>([^<]{1,256})</title>", re.IGNORECASE)
 _VERSION_RE = re.compile(r"\d+[\.\d]+")
@@ -41,28 +43,31 @@ class TlsResult(BaseModel):
 
 # ── HTTP fingerprinting ───────────────────────────────────────────────────────
 
-async def fingerprint_http(url: str, timeout: float) -> Optional[HttpFingerprintResult]:
+async def fingerprint_http(url: str, timeout: float, scope: str) -> Optional[HttpFingerprintResult]:
+    """Pide `url` y resume la respuesta. `scope` es el dominio verificado: las redirecciones solo se siguen dentro
+    de él. Si la respuesta es una redirección que no se siguió, se informa tal cual (3xx y sus cabeceras).
+
+    Lanza `BlockedTarget` si el destino no es una dirección pública; cualquier otro fallo de red devuelve None."""
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            max_redirects=3,
+        fetched = await fetch_in_scope(
+            url,
+            scope=scope,
             timeout=timeout,
-            verify=False,  # capture even sites with bad certs
-        ) as client:
-            resp = await client.get(url)
-            headers_lower = {k.lower(): v for k, v in resp.headers.items()}
-            server = headers_lower.get("server")
-            title_match = _TITLE_RE.search(resp.text[:8192])
-            title = title_match.group(1).strip() if title_match else None
-            return HttpFingerprintResult(
-                url=str(resp.url),
-                status_code=resp.status_code,
-                server_header=server,
-                title=title,
-                response_headers=dict(resp.headers),
-            )
+            verify_tls=False,  # capture even sites with bad certs
+        )
+    except BlockedTarget:
+        raise
     except Exception:
         return None
+    headers_lower = {k.lower(): v for k, v in fetched.headers.items()}
+    title_match = _TITLE_RE.search(fetched.text[:8192])
+    return HttpFingerprintResult(
+        url=fetched.url,
+        status_code=fetched.status_code,
+        server_header=headers_lower.get("server"),
+        title=title_match.group(1).strip() if title_match else None,
+        response_headers=dict(fetched.headers),
+    )
 
 
 # ── Technology detection ──────────────────────────────────────────────────────
@@ -188,13 +193,17 @@ def _cert_to_tls_result(host: str, cert: dict, is_valid: bool) -> TlsResult:
 
 
 async def fingerprint_tls(host: str, timeout: float) -> Optional[TlsResult]:
+    """Lanza `BlockedTarget` si `host` no resuelve a una dirección pública. Sin TLS en el 443, devuelve None."""
+    try:
+        # Se resuelve una sola vez: los dos intentos (con y sin validación) van a las mismas direcciones.
+        addresses = await resolve_public(host, 443)
+    except OSError:
+        return None
+
     # ── try with full validation first ───────────────────────────────────────
     ctx_valid = ssl.create_default_context()
     try:
-        reader, writer = await asyncio.wait_for(
-            asyncio.open_connection(host, 443, ssl=ctx_valid),
-            timeout=timeout,
-        )
+        reader, writer = await connect_any(addresses, 443, timeout, ssl_context=ctx_valid, server_hostname=host)
         ssl_obj = writer.get_extra_info("ssl_object")
         cert = ssl_obj.getpeercert()
         try:
@@ -210,10 +219,7 @@ async def fingerprint_tls(host: str, timeout: float) -> Optional[TlsResult]:
         ctx_noverify.check_hostname = False
         ctx_noverify.verify_mode = ssl.CERT_NONE
         try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, 443, ssl=ctx_noverify),
-                timeout=timeout,
-            )
+            reader, writer = await connect_any(addresses, 443, timeout, ssl_context=ctx_noverify, server_hostname=host)
             ssl_obj = writer.get_extra_info("ssl_object")
             cert = ssl_obj.getpeercert()
             try:

@@ -7,6 +7,7 @@ according to static rules. Called by scan_runner after all modules complete.
 import re
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,10 +25,21 @@ _MEDIUM_PORTS = {22}
 _SECURITY_HEADERS = ["content-security-policy", "x-frame-options", "strict-transport-security"]
 
 
+# Motivos por los que el motor no tocó un destino (clave -> título, texto). Son informativos: explican un informe vacío.
+_SKIP_REASONS = {
+    "non_public_address": (
+        "Host skipped: resolves to a non-public address",
+        "{host} resolves to a private, loopback or link-local address. Recon Scope only scans public Internet "
+        "addresses, so this host was not scanned and its address is not recorded.",
+    ),
+}
+
+
 async def generate_findings(
     job_id: uuid.UUID,
     domain_id: uuid.UUID,
     session: AsyncSession,
+    skipped: Optional[dict[str, str]] = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     now = datetime.now(timezone.utc)
@@ -53,6 +65,17 @@ async def generate_findings(
             description=description,
             evidence=evidence,
         ))
+
+    # ── targets the engine did not touch ──────────────────────────────────────
+    for host, reason in (skipped or {}).items():
+        title, text = _SKIP_REASONS.get(reason, ("Host skipped", "{host} was not scanned."))
+        add(
+            category="other",
+            severity="info",
+            title=title,
+            description=text.format(host=host),
+            evidence={"host": host, "reason": reason},
+        )
 
     # ── exposed ports ─────────────────────────────────────────────────────────
     for p in open_ports:

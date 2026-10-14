@@ -57,7 +57,6 @@ async def test_binary_banner_with_nul_bytes_does_not_leave_the_job_running(monke
         return [PortResult(host=host, port=3306, state="open", service="mysql", banner="J\x00\x00\x00\n8.0.33\x00abc")]
 
     monkeypatch.setattr(scan_runner, "scan_ports", fake_scan_ports)
-    monkeypatch.setattr(scan_runner, "resolve_public", _public("203.0.113.9"), raising=False)
 
     await scan_runner.run_scan(job.id)
 
@@ -86,10 +85,3 @@ async def test_a_failure_while_saving_marks_the_job_failed_instead_of_running(mo
         refreshed = await s.get(ScanJob, job.id)
         assert refreshed.status == "failed"
         assert refreshed.error_message
-
-
-def _public(ip):
-    async def resolve(host, port=0):
-        return [ip]
-
-    return resolve

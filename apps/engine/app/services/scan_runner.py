@@ -35,9 +35,10 @@ from app.recon.fingerprint import (
     fingerprint_http,
     fingerprint_tls,
 )
+from app.recon.netguard import BlockedTarget
 from app.recon.ports import PortResult, scan_ports
 from app.recon.sanitize import clean_json, clean_text
-from app.recon.subdomains import SubdomainResult, enumerate_subdomains
+from app.recon.subdomains import CrtShTooLarge, SubdomainResult, enumerate_subdomains
 from app.services.findings_engine import generate_findings
 
 logger = logging.getLogger(__name__)
@@ -76,6 +77,8 @@ def _public_error(phase: str, exc: Exception) -> str:
     """Mensaje para el usuario: la causa técnica queda en el log y en el registro de auditoría, no en la API."""
     if phase == "subdomain enumeration" and isinstance(exc, httpx.HTTPError):
         return "Subdomain enumeration failed: the certificate transparency source (crt.sh) is unavailable. Try again later."
+    if isinstance(exc, CrtShTooLarge):
+        return "Subdomain enumeration failed: this domain has too many certificates in the transparency logs to list them. Run the other modules on their own."
     return f"The {phase} step failed. Try again, or run fewer modules."
 
 
@@ -150,6 +153,9 @@ async def run_scan(job_id: uuid.UUID) -> None:
 
     error: Optional[Exception] = None
     error_phase = ""
+    # Destinos que el motor no tocó, con el motivo. Se informan como hallazgos informativos: sin eso, quien
+    # escanea un dominio que apunta a una red interna recibiría un informe vacío sin saber por qué.
+    skipped: dict[str, str] = {}
 
     # ── 2. Subdomain enumeration ──────────────────────────────────────────────
     sub_results: list[SubdomainResult] = []
@@ -157,6 +163,9 @@ async def run_scan(job_id: uuid.UUID) -> None:
     if run_subs and not error:
         try:
             sub_results = await enumerate_subdomains(domain_name)
+            for r in sub_results:
+                if r.skipped_reason:
+                    skipped.setdefault(r.hostname, r.skipped_reason)
             if p_subs is not None:
                 await _set_progress(job_id, p_subs)
         except Exception as exc:
@@ -183,7 +192,11 @@ async def run_scan(job_id: uuid.UUID) -> None:
 
         try:
             for host in unique_targets:
-                results = await scan_ports(host, port_range, timeout_sec)
+                try:
+                    results = await scan_ports(host, port_range, timeout_sec)
+                except BlockedTarget as blocked:
+                    skipped.setdefault(host, blocked.reason)
+                    continue
                 port_results.extend(results)
                 logger.debug("Scan %s: %d open ports on %s", job_id, len(results), host)
             if p_ports is not None:
@@ -217,14 +230,19 @@ async def run_scan(job_id: uuid.UUID) -> None:
 
         try:
             for host in unique_fp_hosts:
-                for scheme in ("http", "https"):
-                    fp = await fingerprint_http(f"{scheme}://{host}", timeout_sec)
-                    if fp is not None:
-                        techs = await detect_technologies(fp)
-                        fp_results.append((fp, techs))
-                tls = await fingerprint_tls(host, timeout_sec)
-                if tls is not None:
-                    tls_results.append(tls)
+                if host in skipped:
+                    continue
+                try:
+                    for scheme in ("http", "https"):
+                        fp = await fingerprint_http(f"{scheme}://{host}", timeout_sec, domain_name)
+                        if fp is not None:
+                            techs = await detect_technologies(fp)
+                            fp_results.append((fp, techs))
+                    tls = await fingerprint_tls(host, timeout_sec)
+                    if tls is not None:
+                        tls_results.append(tls)
+                except BlockedTarget as blocked:
+                    skipped.setdefault(host, blocked.reason)
 
             if p_fp is not None:
                 await _set_progress(job_id, p_fp)
@@ -245,7 +263,7 @@ async def run_scan(job_id: uuid.UUID) -> None:
     try:
         await _persist_results(
             job_id, user_id, domain_id, domain_name,
-            sub_results, port_results, fp_results, tls_results,
+            sub_results, port_results, fp_results, tls_results, skipped,
         )
     except Exception as exc:
         logger.exception("Scan %s: saving the results failed", job_id)
@@ -261,6 +279,7 @@ async def _persist_results(
     port_results: list[PortResult],
     fp_results: list[tuple[HttpFingerprintResult, list[TechResult]]],
     tls_results: list[TlsResult],
+    skipped: dict[str, str],
 ) -> None:
     async with AsyncSession(get_engine()) as s:
         job = await s.get(ScanJob, job_id)
@@ -307,7 +326,7 @@ async def _persist_results(
         await s.flush()  # ensure all rows visible before findings query
 
         # Generate and persist findings
-        new_findings = await generate_findings(job_id, domain_id, s)
+        new_findings = await generate_findings(job_id, domain_id, s, skipped)
         for f in new_findings:
             s.add(f)
 

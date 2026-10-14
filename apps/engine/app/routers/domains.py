@@ -30,6 +30,7 @@ from app.schemas.domain import (
     WellKnownFileInstructions,
     WellKnownInstructions,
 )
+from app.recon.netguard import BlockedTarget
 from app.schemas.scan import FindingsBySeverityCount, ScanHistoryEntry
 from app.services.domain_verification import verify_dns_txt, verify_well_known_file
 
@@ -177,10 +178,14 @@ async def verify_domain(
             already_verified=True,
         )
 
+    non_public = False
     if body.method == "dns_txt":
         success = await verify_dns_txt(domain.domain, domain.verification_token)
     else:
-        success = await verify_well_known_file(domain.domain, domain.verification_token)
+        try:
+            success = await verify_well_known_file(domain.domain, domain.verification_token)
+        except BlockedTarget:
+            success, non_public = False, True
 
     domain.verification_status = "verified" if success else "failed"
     domain.verification_method = body.method
@@ -202,8 +207,10 @@ async def verify_domain(
         return VerifyResponse(
             domain=DomainOut.model_validate(domain),
             error=(
-                f"Verification failed via {body.method}. "
-                "Ensure the record / file is published and try again."
+                "The domain resolves to a non-public address, so the verification file cannot be fetched. "
+                "Use the DNS TXT method instead."
+                if non_public
+                else f"Verification failed via {body.method}. Ensure the record / file is published and try again."
             ),
             instructions=_build_instructions(domain.domain, domain.verification_token),
         )

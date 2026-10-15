@@ -1,5 +1,5 @@
 # ── Stage 1: dependencies ─────────────────────────────────────────────────────
-FROM node:20-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
@@ -11,7 +11,7 @@ COPY apps/web/package.json       ./apps/web/
 RUN pnpm install --frozen-lockfile
 
 # ── Stage 2: build ────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+FROM node:25-alpine AS builder
 WORKDIR /app
 
 RUN corepack enable && corepack prepare pnpm@9.4.0 --activate
@@ -33,7 +33,7 @@ ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 RUN pnpm --filter @recon/web build
 
 # ── Stage 3: runtime ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:25-alpine AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

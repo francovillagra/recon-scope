@@ -121,6 +121,8 @@ sequenceDiagram
 
 **Cuentas y sesiones.** Las contraseñas se guardan con bcrypt (hasta 72 bytes, que es lo que bcrypt realmente usa). El hash corre en hilos aparte con una cola acotada: si hay demasiado trabajo, el motor responde `503` en vez de dejar de responder a todos. Hay límite de intentos de login por IP y por IP + correo (`429` con `Retry-After`) y de registros por IP; un correo inexistente y una contraseña incorrecta dan el mismo mensaje y tardan parecido. `JWT_SECRET` es obligatorio y el motor no arranca con uno débil o de ejemplo; los tokens exigen `exp`, `iat` y `sub`.
 
+**Base de datos.** Todas las tablas tienen Row Level Security activada y sin políticas (migración `006`), y a los roles `anon` y `authenticated` de Supabase se les quitan los permisos: aunque la API de datos de Supabase estuviera expuesta, la clave pública no puede leer ni escribir nada. El motor se conecta como dueño de las tablas (el usuario `postgres` en Supabase), al que RLS no le aplica, así que `DATABASE_URL` tiene que usar ese usuario. Una migración nueva que cree una tabla tiene que habilitar RLS: `tests/test_rls.py` falla si alguna tabla queda sin ella.
+
 **Capa HTTP.** Tope de tamaño del cuerpo (`413`), cabeceras de seguridad en todas las respuestas, CORS limitado a `CORS_ORIGINS` y sin credenciales, `/docs` solo con `DEBUG=true`, errores de validación que no repiten lo que envió el cliente (una contraseña nunca vuelve en la respuesta) y errores 500 genéricos, sin stack traces. La web envía una Content-Security-Policy con un nonce distinto en cada respuesta y `connect-src` solo permite hablar con la propia web y con la API.
 
 **Lo que no cubre** (a propósito o por ahora):
@@ -327,7 +329,7 @@ Features planned to evolve recon-scope from a portfolio project into a productio
 - [ ] Scheduled recurring scans with change detection
 - [ ] Slack / webhook notifications on new findings
 - [ ] Rate limiting backed by Redis (currently in-memory)
-- [ ] Full Row Level Security via Supabase Auth migration
+- [ ] Per-user Row Level Security policies via Supabase Auth (today RLS denies everything except the engine's owner role)
 - [ ] AWS deployment option (ECS + RDS)
 
 ---

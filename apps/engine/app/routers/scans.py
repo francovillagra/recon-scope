@@ -13,7 +13,7 @@ from typing import Annotated
 import sqlalchemy.exc
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -56,6 +56,14 @@ SessionDep = Annotated[AsyncSession, Depends(get_session)]
 _RATE_LIMIT = 10
 _RATE_WINDOW = 3600  # seconds
 _scan_limiter = SlidingWindowLimiter(limit=_RATE_LIMIT, window_seconds=_RATE_WINDOW)
+
+
+# Most severe first. Sorting the text of the column would give critical, high, info, low, medium.
+SEVERITY_RANK = case(
+    {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4},
+    value=Finding.severity,
+    else_=5,
+)
 
 
 # ── shared helper ─────────────────────────────────────────────────────────────
@@ -111,7 +119,7 @@ async def _load_scan_detail(
         finding_rows = await session.scalars(
             select(Finding)
             .where(Finding.scan_job_id == job_id)
-            .order_by(Finding.severity, Finding.category)
+            .order_by(SEVERITY_RANK, Finding.category)
         )
         findings = [FindingOut.model_validate(f) for f in finding_rows]
 

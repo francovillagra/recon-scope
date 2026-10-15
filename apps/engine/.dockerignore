@@ -12,7 +12,6 @@ venv/
 tests/
 pytest.ini
 requirements-dev.txt
-debug_imports.py
 Dockerfile
 .dockerignore
 README.md

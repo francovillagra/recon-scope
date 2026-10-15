@@ -33,7 +33,9 @@ export function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         {navItems.map((item) => {
-          const active = pathname.startsWith(item.href)
+          // Overview (/dashboard) es el prefijo de todas las páginas: solo está activo en su propia ruta.
+          const active =
+            item.href === '/dashboard' ? pathname === item.href : pathname.startsWith(item.href)
           return (
             <Link
               key={item.href}

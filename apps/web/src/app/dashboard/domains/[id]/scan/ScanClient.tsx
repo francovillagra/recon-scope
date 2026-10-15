@@ -21,6 +21,8 @@ import { ChartErrorBoundary } from '@/components/charts/ChartErrorBoundary'
 import { exportScanPDF } from '@/lib/pdf-export'
 
 const POLL_INTERVAL_MS = 3000
+// Fallos seguidos al consultar el escaneo antes de dejar de insistir y avisar.
+const MAX_POLL_FAILURES = 5
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 
 type PortRange = 'top-100' | 'top-1000' | 'full'
@@ -93,8 +95,11 @@ export function ScanClient() {
   const [exportingJson, setExportingJson] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
   const [exportError, setExportError] = useState<string | null>(null)
+  // Problema al consultar el estado del escaneo: pasajero (se reintenta) o definitivo (se dejó de consultar).
+  const [pollProblem, setPollProblem] = useState<{ message: string; fatal: boolean } | null>(null)
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollFailures = useRef(0)
 
   useEffect(() => {
     domainsApi
@@ -112,9 +117,13 @@ export function ScanClient() {
 
   function startPolling(jobId: string) {
     stopPolling()
+    pollFailures.current = 0
+    setPollProblem(null)
     pollRef.current = setInterval(async () => {
       try {
         const detail = await scans.get(jobId)
+        pollFailures.current = 0
+        setPollProblem(null)
         setJob(detail.job)
         if (detail.job.status === 'completed') {
           setSubdomains(detail.subdomains)
@@ -125,8 +134,21 @@ export function ScanClient() {
           setFindings(detail.findings)
         }
         if (TERMINAL_STATUSES.has(detail.job.status)) stopPolling()
-      } catch {
-        stopPolling()
+      } catch (err) {
+        // Antes un solo fallo dejaba de consultar sin avisar y la pantalla quedaba en "running" para siempre.
+        pollFailures.current += 1
+        const gone = err instanceof ApiError && err.status === 404
+        if (gone || pollFailures.current >= MAX_POLL_FAILURES) {
+          stopPolling()
+          setPollProblem({
+            message: gone
+              ? 'This scan no longer exists.'
+              : 'Lost contact with the server. The scan may still be running — check again in a moment.',
+            fatal: true,
+          })
+        } else {
+          setPollProblem({ message: 'Connection problem — retrying…', fatal: false })
+        }
       }
     }, POLL_INTERVAL_MS)
   }
@@ -146,10 +168,10 @@ export function ScanClient() {
     if (modPorts) modules.push('ports')
     if (modFingerprint) modules.push('fingerprint')
 
+    // passive_only no se manda: el motor lo calcula según los módulos (con puertos o huella el escaneo no es pasivo).
     const opts: ScanCreateOptions = {
       modules,
       port_range: portRange,
-      passive_only: true,
       timeout_seconds: 30,
     }
 
@@ -312,10 +334,27 @@ export function ScanClient() {
               style={{ width: `${job.progress}%` }}
             />
           </div>
-          {isRunning && (
+          {isRunning && !pollProblem?.fatal && (
             <p className="mt-3 text-xs text-slate-400 flex items-center gap-1.5">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-400 animate-pulse" />
               Polling every 3 s…
+            </p>
+          )}
+          {pollProblem && (
+            <p
+              role="alert"
+              className={`mt-3 text-sm ${pollProblem.fatal ? 'text-red-600' : 'text-amber-600'}`}
+            >
+              {pollProblem.message}
+              {pollProblem.fatal && isRunning && (
+                <button
+                  type="button"
+                  className="ml-2 underline"
+                  onClick={() => job && startPolling(job.id)}
+                >
+                  Check again
+                </button>
+              )}
             </p>
           )}
           {job.status === 'failed' && job.error_message && (

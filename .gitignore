@@ -2,6 +2,9 @@ node_modules
 .turbo
 dist
 .next
+# Next.js los genera al compilar
+next-env.d.ts
+*.tsbuildinfo
 *.local
 .env
 .env.*

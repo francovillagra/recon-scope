@@ -110,8 +110,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Construir y levantar postgres, migración, motor y web
-        run: docker compose -f infra/docker-compose.yml up --build -d
+      - name: Construir las imágenes del motor y de la web
+        run: |
+          set -o pipefail
+          docker compose -f infra/docker-compose.yml build --progress=plain 2>&1 | tee build.log
+      - name: Levantar postgres, migración, motor y web
+        run: docker compose -f infra/docker-compose.yml up -d
       - name: El motor responde
         run: curl --retry 30 --retry-delay 5 --retry-all-errors -fsS http://localhost:8000/api/v1/health
       - name: La web responde con su Content-Security-Policy
@@ -134,7 +138,11 @@ jobs:
           test "$code" = 401
       - name: Registros de los contenedores (solo si algo falló)
         if: failure()
-        run: docker compose -f infra/docker-compose.yml logs --no-color
+        run: |
+          docker compose -f infra/docker-compose.yml ps -a || true
+          docker compose -f infra/docker-compose.yml logs --no-color --tail 60 | tee compose.log || true
+          # El final de lo que falló queda también como anotaciones del job, que se leen sin abrir los registros.
+          { tail -n 6 build.log 2>/dev/null; tail -n 6 compose.log 2>/dev/null; } | sed 's/%/%25/g' | while IFS= read -r line; do echo "::error::${line}"; done
       - name: Apagar
         if: always()
         run: docker compose -f infra/docker-compose.yml down -v

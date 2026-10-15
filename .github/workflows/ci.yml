@@ -85,7 +85,7 @@ jobs:
         with:
           persist-credentials: false
       # La versión de pnpm sale del campo "packageManager" del package.json raíz.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 20

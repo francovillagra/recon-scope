@@ -1,5 +1,5 @@
 # ── Stage 1: build / install dependencies ─────────────────────────────────────
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /app
 
@@ -16,7 +16,7 @@ RUN pip install --upgrade pip \
 
 
 # ── Stage 2: runtime ──────────────────────────────────────────────────────────
-FROM python:3.12-slim AS runner
+FROM python:3.14-slim AS runner
 
 WORKDIR /app
 

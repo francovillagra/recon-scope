@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    name: Motor (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: recon_pytest
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d recon_pytest"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: apps/engine
+    env:
+      # Base descartable del servicio de arriba (las pruebas la vacían en cada test) y secreto de prueba: no son
+      # valores reales. El motor valida JWT_SECRET al importarse y se niega a arrancar con uno débil.
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/recon_pytest
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://ci:ci@localhost:5432/recon_pytest?sslmode=disable
+      TEST_DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/recon_pytest
+      JWT_SECRET: ci-recon-8Qm2xLk7VdP4wT9nZc1RbYh6SfJ3uAe5GoXiNvKt0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: apps/engine/requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      # Aplica las migraciones desde cero: si el SQL no se puede ejecutar, falla acá.
+      - run: alembic upgrade head
+      - run: python -m pytest -q
+
+  engine-audit:
+    name: Avisos de seguridad en las dependencias del motor
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit
+      - run: pip-audit -r apps/engine/requirements.txt
+
+  web:
+    name: Web (build, tipos y cabeceras de seguridad)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # La versión de pnpm sale del campo "packageManager" del package.json raíz.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @recon/core build
+      # El build genera next-env.d.ts y .next/types, que el chequeo de tipos necesita.
+      - run: pnpm --filter @recon/web build
+      - run: pnpm --filter @recon/web type-check
+      # Arranca el servidor ya construido y falla si una página pierde la CSP, su nonce o una cabecera.
+      - run: pnpm --filter @recon/web check:headers
+      - run: pnpm audit --prod --audit-level=high
+
+  docker:
+    name: Las imágenes se construyen y docker compose funciona de punta a punta
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      # Valor de prueba solo para este job: docker compose exige JWT_SECRET (y el motor, que sea fuerte).
+      JWT_SECRET: ci-compose-Hd7Pq3LmZx9VtB2nKc8RwYf5SgJ4uAe6
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Construir y levantar postgres, migración, motor y web
+        run: docker compose -f infra/docker-compose.yml up --build -d
+      - name: El motor responde
+        run: curl --retry 30 --retry-delay 5 --retry-all-errors -fsS http://localhost:8000/api/v1/health
+      - name: La web responde con su Content-Security-Policy
+        run: |
+          curl --retry 30 --retry-delay 5 --retry-all-errors -fsS -D headers.txt -o /dev/null http://localhost:3000/login
+          cat headers.txt
+          grep -i "^content-security-policy:.*'nonce-" headers.txt
+          grep -i "^content-security-policy:.*connect-src 'self' http://localhost:8000" headers.txt
+      - name: Registrarse, entrar y fallar el login sin que el motor se caiga
+        run: |
+          set -euo pipefail
+          api=http://localhost:8000/api/v1
+          json='content-type: application/json'
+          curl -fsS -X POST "$api/auth/register" -H "$json" \
+            -d '{"email":"ci@example.com","password":"una contrasena larga","tos_accepted":true}' | jq -e '.token and .user.email == "ci@example.com"'
+          curl -fsS -X POST "$api/auth/login" -H "$json" \
+            -d '{"email":"ci@example.com","password":"una contrasena larga"}' | jq -e '.token'
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$api/auth/login" -H "$json" \
+            -d '{"email":"ci@example.com","password":"otra contrasena"}')
+          test "$code" = 401
+      - name: Registros de los contenedores (solo si algo falló)
+        if: failure()
+        run: docker compose -f infra/docker-compose.yml logs --no-color
+      - name: Apagar
+        if: always()
+        run: docker compose -f infra/docker-compose.yml down -v

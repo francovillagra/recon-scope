@@ -1,3 +1,4 @@
+import { clearSession } from '@/lib/auth'
 import type {
   AuthResponse,
   RegisterInput,
@@ -7,12 +8,14 @@ import type {
   VerificationMethod,
 } from '@recon/core'
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'
+const BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
 class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    /** Segundos que pide esperar el motor (encabezado Retry-After de un 429 o un 503). */
+    public retryAfter?: number,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -22,6 +25,36 @@ class ApiError extends Error {
 function getToken(): string | null {
   if (typeof window === 'undefined') return null
   return localStorage.getItem('recon_token')
+}
+
+function waitText(seconds: number): string {
+  return seconds < 90 ? `${seconds} seconds` : `${Math.ceil(seconds / 60)} minutes`
+}
+
+/**
+ * Mensaje legible a partir del cuerpo de error del motor. Puede ser `{ detail: "texto" }` o, en un 422,
+ * `{ detail: [{ loc, msg }] }`. (Antes se leía `body.error`, que el motor nunca manda: todos los errores
+ * aparecían como "Unauthorized", "Conflict", "Bad Request"...)
+ */
+export function errorMessage(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown } | null)?.detail
+  if (typeof detail === 'string' && detail) return detail
+  if (Array.isArray(detail)) {
+    const messages = detail
+      .map((item) => {
+        if (!item || typeof item !== 'object') return ''
+        const { msg, loc } = item as { msg?: unknown; loc?: unknown }
+        if (typeof msg !== 'string') return ''
+        const text = msg.replace(/^Value error, /, '')
+        const field = Array.isArray(loc) ? loc[loc.length - 1] : undefined
+        return typeof field === 'string' && !text.toLowerCase().includes(field.toLowerCase())
+          ? `${field}: ${text}`
+          : text
+      })
+      .filter(Boolean)
+    if (messages.length) return messages.join(' ')
+  }
+  return fallback
 }
 
 async function request<T>(
@@ -35,16 +68,28 @@ async function request<T>(
   }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers })
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, { ...options, headers })
+  } catch {
+    throw new ApiError(0, 'Could not reach the server. Check your connection and try again.')
+  }
 
-  if (res.status === 401) {
-    localStorage.removeItem('recon_token')
+  // Una sesión que venció se detecta con un token enviado y rechazado. En /auth/* un 401 es "credenciales
+  // incorrectas": ahí hay que mostrar el error, no recargar la página de login como si nada hubiera pasado.
+  if (res.status === 401 && token && !path.startsWith('/api/v1/auth/')) {
+    clearSession()
     window.location.href = '/login'
+    throw new ApiError(401, 'Your session expired. Please sign in again.')
   }
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new ApiError(res.status, body.error ?? res.statusText)
+    const body = await res.json().catch(() => null)
+    const retryAfter = Number(res.headers.get('Retry-After'))
+    const wait = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined
+    let message = errorMessage(body, res.statusText || `Request failed (${res.status})`)
+    if (wait && (res.status === 429 || res.status === 503)) message += ` Try again in ${waitText(wait)}.`
+    throw new ApiError(res.status, message, wait)
   }
 
   if (res.status === 204) return undefined as T
@@ -69,6 +114,14 @@ export const auth = {
 
 // ── Domains ───────────────────────────────────────────────────────────────────
 
+/** Lo que devuelve POST /domains (no incluye el dominio completo: solo su id y cómo verificarlo). */
+export interface CreateDomainResult {
+  domain_id: string
+  verification_token: string
+  dns_instructions: { record_type: string; name: string; value: string }
+  well_known_instructions: { url: string; value: string }
+}
+
 export const domains = {
   list: () =>
     request<{ domains: Domain[] }>('/api/v1/domains'),
@@ -79,10 +132,10 @@ export const domains = {
     ),
 
   create: (domain: string) =>
-    request<{ domain: Domain; instructions: DomainVerificationInstructions }>(
-      '/api/v1/domains',
-      { method: 'POST', body: JSON.stringify({ domain }) },
-    ),
+    request<CreateDomainResult>('/api/v1/domains', {
+      method: 'POST',
+      body: JSON.stringify({ domain }),
+    }),
 
   verify: (id: string, method: VerificationMethod) =>
     request<{
@@ -192,8 +245,7 @@ export interface ScanDetail {
 export interface ScanCreateOptions {
   modules?: string[]          // e.g. ['subdomains','ports','fingerprint']
   port_range?: 'top-100' | 'top-1000' | 'full'
-  passive_only?: boolean
-  timeout_seconds?: number
+  timeout_seconds?: number    // 1–60; el motor rechaza otros valores
 }
 
 export interface FindingsBySeverity {
@@ -223,7 +275,6 @@ export const scans = {
         domain_id,
         modules: opts.modules ?? ['subdomains'],
         port_range: opts.port_range ?? 'top-1000',
-        passive_only: opts.passive_only ?? true,
         timeout_seconds: opts.timeout_seconds ?? 30,
       }),
     }),

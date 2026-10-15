@@ -1,5 +1,3 @@
-version: "3.9"
-
 # ── Usage ─────────────────────────────────────────────────────────────────────
 #   cp .env.example .env          # fill in the blanks
 #   docker compose up --build     # first run (runs alembic migration automatically)
@@ -38,6 +36,11 @@ services:
     command: alembic upgrade head
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}
+      # El Postgres del compose no tiene SSL: las migraciones lo piden por defecto, acá se desactiva a propósito.
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}?sslmode=disable
+      # Alembic carga la misma configuración que el motor, y esa configuración exige JWT_SECRET: sin esta línea la
+      # migración falla con "JWT_SECRET: Field required" y el motor y la web nunca arrancan.
+      JWT_SECRET: ${JWT_SECRET:?Definí JWT_SECRET en .env (mínimo 32 caracteres; python -c "import secrets; print(secrets.token_hex(64))")}
     depends_on:
       postgres:
         condition: service_healthy
@@ -50,11 +53,13 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}
-      JWT_SECRET: ${JWT_SECRET}
+      MIGRATION_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-recon}:${POSTGRES_PASSWORD:-recon}@postgres:5432/${POSTGRES_DB:-recon}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Definí JWT_SECRET en .env (mínimo 32 caracteres; python -c "import secrets; print(secrets.token_hex(64))")}
       JWT_EXPIRES_DAYS: ${JWT_EXPIRES_DAYS:-7}
       BCRYPT_ROUNDS: ${BCRYPT_ROUNDS:-12}
       CORS_ORIGINS: '["http://localhost:3000"]'
       DEBUG: ${DEBUG:-false}
+      TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-0}
     ports:
       - "8000:8000"
     depends_on:

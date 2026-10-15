@@ -76,6 +76,7 @@ export default function RegisterPage() {
               label="Password"
               autoComplete="new-password"
               minLength={8}
+              maxLength={72}
               required
             />
             <Input
@@ -84,8 +85,10 @@ export default function RegisterPage() {
               label="Confirm password"
               autoComplete="new-password"
               minLength={8}
+              maxLength={72}
               required
             />
+            <p className="-mt-2 text-xs text-slate-400">8 to 72 characters.</p>
 
             {/* ToS acceptance — stored as tos_accepted_at in DB */}
             <div className="flex items-start gap-3 pt-1">

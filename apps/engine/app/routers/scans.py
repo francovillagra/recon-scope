@@ -1,23 +1,22 @@
 """
 Scan router — Phase 1 + Phase 2 + Phase 3 + Phase 4 + Phase 5.
 
-POST /scans              — create a scan_job for a verified domain (rate-limited: 10/hour per user).
+POST /scans              — create a scan_job for a verified domain (10/hour and 2 in progress per user).
 GET  /scans              — list scan jobs for the authenticated user.
 GET  /scans/{job_id}     — job status + all scan data when completed.
 GET  /scans/{job_id}/export/json — full ScanDetailResponse as file download.
 """
-import time
 import uuid
-from collections import defaultdict
 from datetime import date
 from typing import Annotated
 
 import sqlalchemy.exc
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.database import get_session
 from app.dependencies import get_current_user
 from app.models.audit_log import AuditLog
@@ -42,6 +41,9 @@ from app.schemas.scan import (
     TechnologyOut,
     TlsCertificateOut,
 )
+from app.ratelimit import SlidingWindowLimiter
+from app.security import client_ip
+from app.services.domain_verification import verification_expired
 from app.services.scan_runner import run_scan
 
 router = APIRouter(prefix="/scans", tags=["scans"])
@@ -49,23 +51,19 @@ router = APIRouter(prefix="/scans", tags=["scans"])
 AuthDep = Annotated[User, Depends(get_current_user)]
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
 
-# ── In-memory rate limiter ────────────────────────────────────────────────────
+# ── Rate limit ────────────────────────────────────────────────────────────────
 
 _RATE_LIMIT = 10
 _RATE_WINDOW = 3600  # seconds
-_scan_timestamps: dict[str, list[float]] = defaultdict(list)
+_scan_limiter = SlidingWindowLimiter(limit=_RATE_LIMIT, window_seconds=_RATE_WINDOW)
 
 
-def _check_rate_limit(user_id: str) -> None:
-    now = time.time()
-    cutoff = now - _RATE_WINDOW
-    _scan_timestamps[user_id] = [t for t in _scan_timestamps[user_id] if t > cutoff]
-    if len(_scan_timestamps[user_id]) >= _RATE_LIMIT:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit exceeded. Maximum {_RATE_LIMIT} scans per hour per user.",
-        )
-    _scan_timestamps[user_id].append(now)
+# Most severe first. Sorting the text of the column would give critical, high, info, low, medium.
+SEVERITY_RANK = case(
+    {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4},
+    value=Finding.severity,
+    else_=5,
+)
 
 
 # ── shared helper ─────────────────────────────────────────────────────────────
@@ -121,7 +119,7 @@ async def _load_scan_detail(
         finding_rows = await session.scalars(
             select(Finding)
             .where(Finding.scan_job_id == job_id)
-            .order_by(Finding.severity, Finding.category)
+            .order_by(SEVERITY_RANK, Finding.category)
         )
         findings = [FindingOut.model_validate(f) for f in finding_rows]
 
@@ -146,7 +144,16 @@ async def create_scan(
     current_user: AuthDep,
     session: SessionDep,
 ) -> CreateScanResponse:
-    _check_rate_limit(str(current_user.id))
+    # El cupo se consulta ahora pero se descuenta recién cuando el escaneo se crea: un pedido inválido
+    # (dominio inexistente, sin verificar) no gasta los 10 por hora.
+    user_key = str(current_user.id)
+    wait = _scan_limiter.retry_after(user_key)
+    if wait is not None:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Rate limit exceeded. Maximum {_RATE_LIMIT} scans per hour per user.",
+            headers={"Retry-After": str(wait)},
+        )
 
     domain = await session.get(Domain, body.domain_id)
     if domain is None or domain.user_id != current_user.id:
@@ -154,14 +161,34 @@ async def create_scan(
 
     if domain.verification_status != "verified":
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=422,
             detail="Domain not verified. Verify ownership before scanning.",
+        )
+    if verification_expired(domain):
+        raise HTTPException(
+            status_code=422,
+            detail="Domain verification expired. Verify ownership again before scanning.",
+        )
+
+    in_progress = await session.scalar(
+        select(func.count()).select_from(ScanJob).where(
+            ScanJob.user_id == current_user.id, ScanJob.status.in_(("queued", "running"))
+        )
+    )
+    if in_progress >= settings.SCAN_MAX_PER_USER:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=(
+                f"You already have {in_progress} scan(s) in progress (maximum {settings.SCAN_MAX_PER_USER}). "
+                "Wait for one to finish."
+            ),
+            headers={"Retry-After": "30"},
         )
 
     config = {
         "modules": body.modules,
         "port_range": body.port_range,
-        "passive_only": body.passive_only,
+        "passive_only": body.passive_only,  # lo calcula el esquema a partir de los módulos
         "timeout_seconds": body.timeout_seconds,
     }
     job = ScanJob(
@@ -175,7 +202,7 @@ async def create_scan(
         user_id=current_user.id,
         action="scan_started",
         target=domain.domain,
-        ip_address=request.client.host if request.client else None,
+        ip_address=client_ip(request),
         metadata_={"modules": body.modules},
     ))
 
@@ -186,11 +213,12 @@ async def create_scan(
     except sqlalchemy.exc.DBAPIError as e:
         if getattr(e.orig, "pgcode", None) == "P0001":
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=422,
                 detail="Domain not verified. Verify ownership before scanning.",
             )
         raise
 
+    _scan_limiter.record(user_key)
     background_tasks.add_task(run_scan, job.id)
     return CreateScanResponse(job_id=job.id, status="queued")
 

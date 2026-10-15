@@ -7,6 +7,7 @@ according to static rules. Called by scan_runner after all modules complete.
 import re
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,7 @@ from app.models.finding import Finding
 from app.models.http_fingerprint import HttpFingerprint
 from app.models.port import Port
 from app.models.tls_certificate import TlsCertificate
+from app.services.scan_notes import ScanNotes
 
 _VERSION_IN_SERVER_RE = re.compile(r"\d+\.\d+")
 
@@ -24,10 +26,35 @@ _MEDIUM_PORTS = {22}
 _SECURITY_HEADERS = ["content-security-policy", "x-frame-options", "strict-transport-security"]
 
 
+# Lo que el motor no hizo y por qué (ver scan_notes): motivo -> (título, texto). Todo es informativo.
+_NOTE_TEXT = {
+    "non_public_address": (
+        "Host skipped: resolves to a non-public address",
+        "{host} resolves to a private, loopback or link-local address. Recon Scope only scans public Internet "
+        "addresses, so this host was not scanned and its address is not recorded.",
+    ),
+    "limit_subdomains": (
+        "Subdomain limit reached",
+        "The certificate transparency logs list {found} names for this domain. Only the first {kept} were "
+        "resolved (limit: {limit} per scan), so the subdomain list is incomplete.",
+    ),
+    "limit_hosts": (
+        "Host limit reached",
+        "{total} hosts were eligible for the {phase} step but a scan covers at most {limit}. Only the first "
+        "{scanned} were scanned; the rest were skipped.",
+    ),
+    "time_limit": (
+        "Scan stopped at the time limit",
+        "The scan reached its {seconds}-second limit during the {phase} step. The results are partial.",
+    ),
+}
+
+
 async def generate_findings(
     job_id: uuid.UUID,
     domain_id: uuid.UUID,
     session: AsyncSession,
+    notes: Optional[ScanNotes] = None,
 ) -> list[Finding]:
     findings: list[Finding] = []
     now = datetime.now(timezone.utc)
@@ -53,6 +80,17 @@ async def generate_findings(
             description=description,
             evidence=evidence,
         ))
+
+    # ── what the engine did not do ────────────────────────────────────────────
+    for evidence in (notes.items() if notes else []):
+        title, text = _NOTE_TEXT.get(evidence["reason"], ("Scan note", "Part of the scan was not performed."))
+        add(
+            category="other",
+            severity="info",
+            title=title,
+            description=text.format_map(evidence),
+            evidence=evidence,
+        )
 
     # ── exposed ports ─────────────────────────────────────────────────────────
     for p in open_ports:

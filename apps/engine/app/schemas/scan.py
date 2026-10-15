@@ -1,18 +1,27 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 VALID_PORT_RANGES = {"top-100", "top-1000", "full"}
+ScanModule = Literal["subdomains", "ports", "fingerprint"]
+ACTIVE_MODULES = {"ports", "fingerprint"}  # se conectan a los servidores del dominio; "subdomains" solo consulta crt.sh y DNS
 
 
 class CreateScanRequest(BaseModel):
     domain_id: uuid.UUID
-    modules: list[str] = ["subdomains"]
+    modules: list[ScanModule] = Field(default_factory=lambda: ["subdomains"], min_length=1, max_length=3)
     port_range: str = "top-1000"
-    passive_only: bool = True
-    timeout_seconds: int = 30
+    # Opcional. El servidor lo calcula a partir de los módulos; si el cliente manda true junto con módulos
+    # activos es una contradicción y se rechaza (antes se guardaba "passive_only": true en un escaneo activo).
+    passive_only: Optional[bool] = None
+    timeout_seconds: int = Field(default=30, ge=1, le=60)  # por conexión / petición
+
+    @field_validator("modules")
+    @classmethod
+    def dedupe_modules(cls, v: list[str]) -> list[str]:
+        return list(dict.fromkeys(v))
 
     @field_validator("port_range")
     @classmethod
@@ -20,6 +29,14 @@ class CreateScanRequest(BaseModel):
         if v not in VALID_PORT_RANGES:
             raise ValueError(f"port_range must be one of {sorted(VALID_PORT_RANGES)}")
         return v
+
+    @model_validator(mode="after")
+    def compute_passive_only(self) -> "CreateScanRequest":
+        active = any(m in ACTIVE_MODULES for m in self.modules)
+        if self.passive_only and active:
+            raise ValueError("passive_only=true only allows the 'subdomains' module")
+        self.passive_only = not active
+        return self
 
 
 class CreateScanResponse(BaseModel):
@@ -52,6 +69,12 @@ class SubdomainOut(BaseModel):
     source: str
     resolved_ip: Optional[str]
     created_at: datetime
+
+    @field_validator("resolved_ip", mode="before")
+    @classmethod
+    def _ip_as_text(cls, v):
+        # La columna es INET: asyncpg la devuelve como ipaddress.IPv4Address/IPv6Address, no como str.
+        return None if v is None else str(v)
 
 
 class PortOut(BaseModel):

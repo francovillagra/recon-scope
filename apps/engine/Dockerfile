@@ -34,4 +34,9 @@ USER app
 
 EXPOSE 8000
 
-CMD sh -c "alembic upgrade head; uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# - `&&` y no `;`: si las migraciones fallan el contenedor tiene que fallar, no arrancar contra un esquema viejo.
+# - `exec`: uvicorn queda como proceso principal y recibe SIGTERM (cierre ordenado en cada despliegue).
+# - --no-proxy-headers: la IP del cliente se decide en la aplicación (TRUSTED_PROXY_COUNT), no por una variable
+#   del entorno que cambie quién es "el cliente" sin que el código lo sepa.
+# - --no-server-header: no anunciar "uvicorn" en cada respuesta.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --no-proxy-headers --no-server-header"]

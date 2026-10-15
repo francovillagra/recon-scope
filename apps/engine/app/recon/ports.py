@@ -4,7 +4,9 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.recon.netguard import resolve_public
 from app.recon.port_lists import FULL, TOP_100, TOP_1000
+from app.recon.sanitize import clean_text
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +80,15 @@ def _ports_for_range(port_range: str) -> list[int]:
 async def _probe(
     sem: asyncio.Semaphore,
     host: str,
+    address: str,
     port: int,
     timeout: float,
 ) -> PortResult:
     async with sem:
         try:
+            # Se conecta a la dirección ya validada, no al nombre: el DNS no puede cambiar el destino a mitad del escaneo.
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port),
+                asyncio.open_connection(address, port),
                 timeout=timeout,
             )
         except (asyncio.TimeoutError, ConnectionRefusedError, OSError):
@@ -97,7 +101,7 @@ async def _probe(
                 timeout=BANNER_TIMEOUT,
             )
             if data:
-                banner = data.decode("utf-8", errors="replace").strip()[:500]
+                banner = clean_text(data.decode("utf-8", errors="replace").strip()[:500])
         except Exception:
             pass
 
@@ -121,7 +125,16 @@ async def scan_ports(
     port_range: str,
     timeout: float,
 ) -> list[PortResult]:
+    """Escanea los puertos de `host` (nombre o IP).
+
+    Lanza `BlockedTarget` si el destino no es una dirección pública (ver netguard). El nombre se resuelve una sola
+    vez y todos los puertos se prueban contra la misma dirección; si tiene varias, se usa la primera (IPv4 antes
+    que IPv6). Un nombre que no resuelve no tiene nada que escanear: devuelve una lista vacía."""
+    try:
+        address = (await resolve_public(host, 0))[0]
+    except OSError:
+        return []
     ports = _ports_for_range(port_range)
     sem = asyncio.Semaphore(SEMAPHORE_LIMIT)
-    results = await asyncio.gather(*[_probe(sem, host, p, timeout) for p in ports])
+    results = await asyncio.gather(*[_probe(sem, host, address, p, timeout) for p in ports])
     return [r for r in results if r.state == "open"]

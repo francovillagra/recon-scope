@@ -21,7 +21,7 @@ export default function NewDomainPage() {
 
     try {
       const res = await domainsApi.create(domain)
-      router.push(`/dashboard/domains/${res.domain.id}/verify`)
+      router.push(`/dashboard/domains/${res.domain_id}/verify`)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Failed to register domain')
     } finally {

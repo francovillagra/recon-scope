@@ -1,0 +1,28 @@
+# Contexto de build de apps/web/Dockerfile (docker-compose usa "context: .."): solo hace falta el código de la web
+# y de packages/core. Sin esto, el contexto incluye .git, los node_modules del host (que pisarían los de la
+# imagen) y cualquier .env con secretos, y `COPY apps/web/` los metería en las capas de la imagen.
+.git
+.claude
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/*.tsbuildinfo
+**/next-env.d.ts
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+**/.DS_Store
+coverage
+
+# No hacen falta para construir la web (el motor tiene su propio Dockerfile y contexto).
+apps/engine
+infra
+assets
+schema.sql
+README.md
+**/__pycache__
+**/.venv
+**/venv
+**/.pytest_cache

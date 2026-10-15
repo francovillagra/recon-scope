@@ -21,6 +21,8 @@ const nextConfig = {
   outputFileTracingRoot: path.join(__dirname, '../../'),
   poweredByHeader: false,
   reactStrictMode: true,
+  // La web no muestra imágenes: sin optimizador no hay endpoint /_next/image que atacar (ni sharp en uso).
+  images: { unoptimized: true },
   async headers() {
     return [{ source: '/:path*', headers: securityHeaders }]
   },

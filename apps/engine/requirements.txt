@@ -4,12 +4,12 @@
 # dentro (starlette y httpcore).
 
 # Web framework
-fastapi==0.143.1
-starlette==1.8.0          # middleware y manejo de excepciones de app/security.py y app/main.py
+fastapi==0.146.0
+starlette==1.9.0          # middleware y manejo de excepciones de app/security.py y app/main.py
 uvicorn[standard]==0.54.0
 
 # Database — async SQLAlchemy + asyncpg driver
-sqlalchemy[asyncio]==2.1.4
+sqlalchemy[asyncio]==2.1.5
 asyncpg==0.32.0
 
 # Migrations

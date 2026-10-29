@@ -4,21 +4,21 @@
 # dentro (starlette y httpcore).
 
 # Web framework
-fastapi==0.143.1
-starlette==1.8.0          # middleware y manejo de excepciones de app/security.py y app/main.py
+fastapi==0.162.0
+starlette==1.10.0          # middleware y manejo de excepciones de app/security.py y app/main.py
 uvicorn[standard]==0.54.0
 
 # Database — async SQLAlchemy + asyncpg driver
-sqlalchemy[asyncio]==2.1.4
+sqlalchemy[asyncio]==2.1.6
 asyncpg==0.32.0
 
 # Migrations
-alembic==1.20.0
+alembic==1.20.1
 psycopg2-binary==2.9.13
 
 # Settings & validation
 pydantic==2.14.1
-pydantic-settings==2.16.0
+pydantic-settings==2.16.1
 email-validator==2.3.0    # required by Pydantic EmailStr
 
 # Auth

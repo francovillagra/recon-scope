@@ -1,0 +1,2 @@
+# Solo lo usa init.py (genera la autoridad de certificación de práctica). La consola y los servidores de práctica usan la biblioteca estándar.
+cryptography==50.0.2

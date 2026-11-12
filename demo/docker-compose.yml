@@ -1,0 +1,238 @@
+# Demo local de Recon Scope: el motor real, sitios de práctica y una consola guiada, todo en esta computadora, con un solo comando.
+#
+#   cd demo
+#   docker compose up --build
+#
+# Después abrir la consola: http://localhost:4100 (los pasos y las pruebas están en demo/README.md).
+#
+# Qué hay de seguridad en esta demo:
+#   - La red "lab" no tiene salida: el motor, la base y los sitios de práctica no pueden hablar con internet ni con la red local.
+#     Es lo que permite que el motor acepte direcciones privadas (ALLOW_PRIVATE_TARGETS) sin riesgo: no tiene a dónde ir fuera de la demo.
+#   - Solo la consola se publica, y solo en 127.0.0.1: nadie de la red local puede entrar. El motor, la base y los sitios de
+#     práctica no publican ningún puerto.
+#   - No hay credenciales en el repositorio: `init` las genera la primera vez en un volumen de Docker (ver init.py).
+#   - Los certificados de práctica los firma una autoridad que la demo crea y cuya clave se descarta (ver init.py): el motor
+#     sigue verificando certificados igual que siempre, pero solo reconoce esa autoridad.
+#   - La base vive en memoria (tmpfs): cada vez que se enciende, empieza vacía.
+#   - Todo lo que se escribió para la demo corre sin root, sin privilegios extra y sin capacidades de Linux.
+name: recon-scope-demo
+
+x-demo-build: &demo-build
+  context: .
+
+services:
+  # Genera credenciales y certificados la primera vez (y no los toca después). Sin red. Termina enseguida.
+  init:
+    build: *demo-build
+    image: recon-scope-demo-tools
+    user: root
+    command: ["python", "init.py"]
+    network_mode: none
+    read_only: true
+    volumes:
+      - demo_state:/run/demo
+      - demo_shared:/run/shared
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Solo lo necesario para dejar los archivos a nombre del usuario de la demo en los volúmenes.
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+
+  postgres:
+    image: postgres:16-alpine
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      POSTGRES_USER: recon
+      POSTGRES_DB: recon
+      POSTGRES_PASSWORD_FILE: /run/demo/postgres_password
+    volumes:
+      - demo_state:/run/demo:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - lab
+    healthcheck:
+      # -h 127.0.0.1 a propósito: mientras la base se inicializa solo escucha por socket, y sin -h el chequeo daría "lista".
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U recon -d recon"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # El motor de Recon Scope, tal cual está en apps/engine (sin cambios).
+  engine:
+    build:
+      context: ../apps/engine
+    image: recon-scope-demo-engine
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    environment:
+      # Los sitios de práctica tienen direcciones privadas de la red de Docker; sin esto el motor se negaría a tocarlos (es su
+      # protección contra SSRF). Es seguro acá porque la red "lab" no tiene salida. En un despliegue real tiene que ser false.
+      ALLOW_PRIVATE_TARGETS: "true"
+      # El motor solo reconoce a la autoridad de la demo. Las comprobaciones de certificado siguen activas.
+      SSL_CERT_FILE: /run/demo/pki/ca.pem
+      # Si Docker Desktop tiene un proxy configurado, que no lo use: la red de la demo no sale a ningún lado.
+      NO_PROXY: "*"
+      no_proxy: "*"
+      CORS_ORIGINS: "[]"
+      DEBUG: "false"
+      TRUSTED_PROXY_COUNT: "0"
+    volumes:
+      - demo_state:/run/demo:ro
+    # Las credenciales se leen del volumen y se pasan como variables solo al proceso del motor. Es el mismo comando que
+    # el Dockerfile del motor (migrar la base y arrancar), más esas variables.
+    command:
+      - sh
+      - -c
+      - |
+        export JWT_SECRET="$$(cat /run/demo/jwt_secret)"
+        DB_PASSWORD="$$(cat /run/demo/postgres_password)"
+        export DATABASE_URL="postgresql+asyncpg://recon:$$DB_PASSWORD@postgres:5432/recon"
+        export MIGRATION_DATABASE_URL="postgresql+psycopg2://recon:$$DB_PASSWORD@postgres:5432/recon?sslmode=disable"
+        alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-proxy-headers --no-server-header
+    networks:
+      - lab
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 40
+      start_period: 5s
+
+  # tienda-demo.test: el sitio "del cliente". Sano, con certificado vigente.
+  shop:
+    build: *demo-build
+    image: recon-scope-demo-tools
+    command: ["python", "practice.py"]
+    init: true
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      PRACTICE_ROLE: shop
+    volumes:
+      - demo_state:/run/demo:ro
+      - demo_shared:/run/shared:ro
+    networks:
+      lab:
+        aliases:
+          - tienda-demo.test
+    sysctls:
+      # Permite abrir el puerto 443 sin ser root.
+      net.ipv4.ip_unprivileged_port_start: 0
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # pruebas.tienda-demo.test: el servidor de pruebas que nadie recordaba. Certificado vencido, puertos de más.
+  staging:
+    build: *demo-build
+    image: recon-scope-demo-tools
+    command: ["python", "practice.py"]
+    init: true
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      PRACTICE_ROLE: staging
+    volumes:
+      - demo_state:/run/demo:ro
+      - demo_shared:/run/shared:ro
+    networks:
+      lab:
+        aliases:
+          - pruebas.tienda-demo.test
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # crt.sh de práctica: el registro público de certificados que consulta el motor. Así el motor no sale a internet.
+  ct:
+    build: *demo-build
+    image: recon-scope-demo-tools
+    command: ["python", "practice.py"]
+    init: true
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    environment:
+      PRACTICE_ROLE: ct
+    volumes:
+      - demo_state:/run/demo:ro
+      - demo_shared:/run/shared:ro
+    networks:
+      lab:
+        aliases:
+          - crt.sh
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # La consola guiada: la página con los botones. Arranca la última, cuando el motor ya responde.
+  console:
+    build: *demo-build
+    image: recon-scope-demo-tools
+    command: ["python", "console/server.py"]
+    init: true
+    depends_on:
+      engine:
+        condition: service_healthy
+      shop:
+        condition: service_started
+      staging:
+        condition: service_started
+      ct:
+        condition: service_started
+    environment:
+      DEMO_ENGINE_URL: http://engine:8000
+      DEMO_CONSOLE_PUBLIC_PORT: ${DEMO_CONSOLE_PORT:-4100}
+    volumes:
+      - demo_state:/run/demo:ro
+      - demo_shared:/run/shared
+    networks:
+      - lab
+      - edge   # solo para poder publicar el puerto de la consola
+    ports:
+      - "127.0.0.1:${DEMO_CONSOLE_PORT:-4100}:8080"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=3)"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+
+networks:
+  lab:
+    internal: true
+  edge: {}
+
+volumes:
+  demo_state:
+  demo_shared:

@@ -147,6 +147,17 @@ sequenceDiagram
 
 Registrate en el dashboard, verificá la propiedad de tu dominio y lanzá el primer scan.
 
+### Demo local (ver el producto funcionando)
+
+Para ver Recon Scope de punta a punta en una computadora, sin revisar ningún sitio real, la carpeta [`demo/`](./demo) trae el motor con sitios de práctica propios y una consola guiada con botones. Se enciende con un solo comando:
+
+```bash
+cd demo
+docker compose up --build   # y abrir http://localhost:4100
+```
+
+La red de la demo no tiene salida a internet y los únicos objetivos posibles son los sitios de práctica. Los pasos, la prueba de aceptación y las decisiones de seguridad están en [`demo/README.md`](./demo/README.md).
+
 ### Desarrollo local
 
 #### Prerequisitos
@@ -311,6 +322,8 @@ pnpm install --frozen-lockfile
 pnpm --filter @recon/core build && pnpm --filter @recon/web build
 pnpm --filter @recon/web check:headers
 ```
+
+La demo local tiene sus propias pruebas, que no necesitan Docker (`pip install pytest cryptography pyyaml` y `python -m pytest demo/tests -q`). Por ahora no corren en el workflow de CI.
 
 El workflow de GitHub Actions (`.github/workflows/ci.yml`) corre en cada pull request: las pruebas del motor contra un PostgreSQL real (Python 3.12 y 3.13, con las migraciones aplicadas desde cero), `pip-audit` y `pnpm audit` sobre las dependencias de producción, el build, los tipos y las cabeceras de la web, y construye las imágenes de Docker con `docker compose` para probar un registro y un login reales. Dependabot propone las actualizaciones cada semana.
 

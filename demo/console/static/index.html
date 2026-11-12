@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Demo de Recon Scope</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d1117'/%3E%3Ccircle cx='15' cy='15' r='7' fill='none' stroke='%2358a6ff' stroke-width='2.4'/%3E%3Cpath d='M20.5 20.5L26 26' stroke='%2358a6ff' stroke-width='2.8' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="wrap">
+    <header class="top">
+      <div class="titles">
+        <h1>Demo de Recon Scope</h1>
+        <p class="lead">Un recorrido guiado: demostrar que un dominio es propio, revisarlo desde afuera como lo haría un atacante y entender qué se encontró. Todo ocurre en esta computadora, sobre sitios de práctica; nada sale a internet.</p>
+      </div>
+      <p id="status" class="status" data-state="wait" role="status">Revisando el sistema…</p>
+    </header>
+
+    <div class="layout">
+      <section class="steps" aria-labelledby="steps-title">
+        <h2 id="steps-title" class="visually-hidden">Recorrido</h2>
+        <ol id="steps" class="step-list"></ol>
+      </section>
+
+      <div class="side">
+        <section class="sites" aria-labelledby="sites-title">
+          <h2 id="sites-title">Sitios de práctica</h2>
+          <ul id="sites" class="site-list"></ul>
+        </section>
+
+        <section class="activity" aria-labelledby="log-title">
+          <h2 id="log-title">Lo que va pasando</h2>
+          <ol id="log" class="log" aria-live="polite">
+            <li class="empty">Todavía no pasó nada. Empezar por el paso 1.</li>
+          </ol>
+        </section>
+      </div>
+    </div>
+
+    <footer>
+      <p>Simulación controlada con datos de práctica. El dominio <span class="mono">.test</span> está reservado para pruebas y no existe en internet; los sitios son programas mínimos que solo responden lo necesario para el recorrido. El código de esta demo está en la carpeta <span class="mono">demo/</span> del repositorio.</p>
+      <p><button id="reset" type="button" class="link">Reiniciar el recorrido</button></p>
+    </footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -63,12 +63,12 @@ export default function LandingPage() {
             Get Started
           </Link>
           <a
-            href="https://github.com/francovillagra/recon-scope"
+            href="https://francoverse.fvillagra-dev.workers.dev"
             target="_blank"
             rel="noopener noreferrer"
             className="rounded-lg border border-slate-700 bg-slate-900 px-6 py-3 text-sm font-semibold text-slate-300 hover:bg-slate-800 transition-colors"
           >
-            View on GitHub
+            Portfolio
           </a>
         </div>
       </section>

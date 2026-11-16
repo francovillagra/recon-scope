@@ -42,7 +42,7 @@ try {
 
   // La prueba de humo, que corre antes, ya dejó creada la cuenta de práctica (el reinicio del recorrido la conserva): se crea solo si falta.
   let alive = await step('paso 1: la cuenta de práctica está lista (se crea, aceptando los términos de la demo, si todavía no existe)', async () => {
-    const ready = page.getByText('Cuenta lista');
+    const ready = page.getByText('Cuenta lista').first();
     if (!(await ready.isVisible())) {
       await page.locator('#accept').check({ timeout: 30_000 });
       await page.getByRole('button', { name: 'Crear cuenta' }).click();
@@ -51,25 +51,25 @@ try {
   });
   alive = alive && await step('paso 2: se registra tienda-demo.test y el motor entrega el código de verificación', async () => {
     await page.getByRole('button', { name: 'Registrar tienda-demo.test' }).click();
-    await page.getByText('Dominio registrado').waitFor({ timeout: 60_000 });
+    await page.getByText('Dominio registrado').first().waitFor({ timeout: 60_000 });
   });
   alive = alive && await step('paso 3a: el motor se niega a escanear un dominio sin verificar', async () => {
     await page.getByRole('button', { name: 'Probar un escaneo ahora' }).click();
-    await page.getByText('El motor rechazó el escaneo').waitFor({ timeout: 60_000 });
+    await page.getByText('El motor rechazó el escaneo').first().waitFor({ timeout: 60_000 });
   });
   alive = alive && await step('paso 3b: sin el archivo publicado, la verificación de propiedad falla', async () => {
     await page.getByRole('button', { name: 'Verificar propiedad' }).click();
-    await page.getByText('El motor no encontró el archivo con el código').waitFor({ timeout: 60_000 });
+    await page.getByText('El motor no encontró el archivo con el código').first().waitFor({ timeout: 60_000 });
   });
   alive = alive && await step('paso 3c: con el archivo publicado, el motor lo pide por HTTPS y da la propiedad por demostrada', async () => {
     await page.getByRole('button', { name: 'Publicar el archivo en el sitio' }).click();
     await page.getByRole('button', { name: 'Retirar el archivo' }).waitFor({ timeout: 30_000 });
     await page.getByRole('button', { name: 'Verificar propiedad' }).click();
-    await page.getByText('Propiedad demostrada').waitFor({ timeout: 90_000 });
+    await page.getByText('Propiedad demostrada').first().waitFor({ timeout: 90_000 });
   });
   alive = alive && await step('pasos 4 y 5: el primer escaneo termina con «2 altos, 1 medio, 5 bajos»', async () => {
     await page.getByRole('button', { name: 'Iniciar escaneo' }).click();
-    await page.locator('.headline', { hasText: '2 altos, 1 medio, 5 bajos' }).waitFor({ timeout: 300_000 });
+    await page.locator('.headline', { hasText: '2 altos, 1 medio, 5 bajos' }).first().waitFor({ timeout: 300_000 });
     const chips = (await page.locator('.result-head .chips .sev').allInnerTexts()).map((t) => t.trim());
     if (!['2 altos', '1 medio', '5 bajos'].every((c) => chips.includes(c))) throw new Error(`etiquetas de gravedad inesperadas: ${chips.join(', ')}`);
   });
@@ -79,7 +79,7 @@ try {
       await page.getByRole('button', { name: 'Apagar el servidor de pruebas' }).click();
       await page.getByRole('button', { name: 'Volver a encender el servidor de pruebas' }).waitFor({ timeout: 30_000 });
       await page.getByRole('button', { name: 'Escanear de nuevo' }).first().click();
-      await page.locator('.headline').filter({ hasText: /^\s*1 bajo\s*$/ }).waitFor({ timeout: 300_000 });
+      await page.locator('.headline').filter({ hasText: /^\s*1 bajo\s*$/ }).first().waitFor({ timeout: 300_000 });
     });
     await page.screenshot({ path: 'escritorio-segundo-escaneo.png', fullPage: true });
   }

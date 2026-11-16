@@ -6,7 +6,7 @@
 
 > Plataforma de reconocimiento automatizado para auditorías de seguridad autorizadas.
 
-**Live demo:** [recon-scope.vercel.app](https://recon-scope.vercel.app) · **Engine API:** [reconapi-production.up.railway.app](https://reconapi-production.up.railway.app/api/v1/health)
+**Demo en línea:** en pausa por ahora (la base de datos del plan gratuito está detenida). Hay un video de la demo en el [portfolio](https://francoverse.fvillagra-dev.workers.dev/proyectos) y la demo local (más abajo) corre el sistema completo en una computadora.
 
 ---
 
@@ -137,15 +137,15 @@ sequenceDiagram
 
 ## Inicio rápido
 
-### Producción (recomendado)
+### Producción (en pausa)
 
 | Servicio | URL |
 |---|---|
-| Dashboard web | https://recon-scope.vercel.app |
-| Engine API | https://reconapi-production.up.railway.app |
-| Health check | https://reconapi-production.up.railway.app/api/v1/health |
+| Dashboard web | `https://recon-scope.vercel.app` |
+| Engine API | `https://reconapi-production.up.railway.app` |
+| Health check | `https://reconapi-production.up.railway.app/api/v1/health` |
 
-Registrate en el dashboard, verificá la propiedad de tu dominio y lanzá el primer scan.
+Estas son las direcciones del despliegue, que está en pausa por ahora (la base de datos del plan gratuito está detenida). Con el despliegue activo: registrarse en el dashboard, verificar la propiedad del dominio y lanzar el primer scan.
 
 ### Demo local (ver el producto funcionando)
 
@@ -156,7 +156,7 @@ cd demo
 docker compose up --build   # y abrir http://localhost:4100
 ```
 
-La red de la demo no tiene salida a internet y los únicos objetivos posibles son los sitios de práctica. Los pasos, la prueba de aceptación y las decisiones de seguridad están en [`demo/README.md`](./demo/README.md).
+La red de la demo no tiene salida a internet y los únicos objetivos posibles son los sitios de práctica. Los pasos, la prueba de aceptación y las decisiones de seguridad están en [`demo/README.md`](./demo/README.md). Se verificó el 16/11/2026 en Linux (Docker Engine y Compose, en un servidor de GitHub Actions); **no se verificó en Docker Desktop (Windows ni macOS)**.
 
 ### Desarrollo local
 
@@ -349,7 +349,7 @@ Features planned to evolve recon-scope from a portfolio project into a productio
 
 ## Autor
 
-**Franco Villagra** — Desarrollador · Ciberseguridad
+**Franco Villagra** — Desarrollador orientado a Ciberseguridad
 
 - Portfolio: [francoverse.fvillagra-dev.workers.dev](https://francoverse.fvillagra-dev.workers.dev)
 - GitHub: [@francovillagra](https://github.com/francovillagra)
@@ -358,4 +358,4 @@ Features planned to evolve recon-scope from a portfolio project into a productio
 
 ## Licencia
 
-MIT — libre para usar, modificar y distribuir.
+Todos los derechos reservados (ver [LICENSE](LICENSE)). El código se comparte a pedido y bajo acuerdo de confidencialidad, solo para consulta y evaluación.

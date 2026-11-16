@@ -40,10 +40,14 @@ try {
   await page.locator('#status[data-state="ok"]').waitFor({ timeout: 90_000 });
   check((await page.locator('#status').innerText()).includes('Sistema listo'), 'arriba dice «Sistema listo»');
 
-  let alive = await step('paso 1: se crea la cuenta de práctica (aceptando los términos de la demo)', async () => {
-    await page.locator('#accept').check();
-    await page.getByRole('button', { name: 'Crear cuenta' }).click();
-    await page.getByText('Cuenta lista').waitFor({ timeout: 60_000 });
+  // La prueba de humo, que corre antes, ya dejó creada la cuenta de práctica (el reinicio del recorrido la conserva): se crea solo si falta.
+  let alive = await step('paso 1: la cuenta de práctica está lista (se crea, aceptando los términos de la demo, si todavía no existe)', async () => {
+    const ready = page.getByText('Cuenta lista');
+    if (!(await ready.isVisible())) {
+      await page.locator('#accept').check({ timeout: 30_000 });
+      await page.getByRole('button', { name: 'Crear cuenta' }).click();
+    }
+    await ready.waitFor({ timeout: 60_000 });
   });
   alive = alive && await step('paso 2: se registra tienda-demo.test y el motor entrega el código de verificación', async () => {
     await page.getByRole('button', { name: 'Registrar tienda-demo.test' }).click();

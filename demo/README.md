@@ -177,4 +177,11 @@ Cubren la generación de credenciales y certificados, los sitios de práctica (c
 
 **De punta a punta con el motor verdadero.** El recorrido completo (también la prueba de humo, 11 de 11 en unos 10 segundos) se corrió contra el motor de `apps/engine` con PostgreSQL 16 reales, y la consola se recorrió con un navegador real (Chromium), sin errores en la consola del navegador y sin desbordes de pantalla en un ancho de celular. Como el entorno de desarrollo no puede descargar imágenes de Docker, esa corrida usó un laboratorio equivalente al compose: una red aislada sin salida, direcciones privadas del mismo tipo que las de Docker (172.x), el mismo comando y las mismas variables del motor (salvo que escuchaba solo en `127.0.0.1`, porque todos los procesos compartían una máquina), el `init.py` verdadero y usuarios sin privilegios para la consola y los sitios.
 
-**Lo que todavía no se verificó:** `docker compose up --build` en Docker Desktop (Windows). Es lo que cubre la prueba de aceptación de arriba.
+**Verificado en Linux.** El 16/11/2026 se levantó la demo completa en un servidor de GitHub Actions (Ubuntu 26.04, Docker Engine 29.4.2, Docker Compose 5.1.3, Google Chrome) y se comprobó lo siguiente:
+
+- `docker compose up --build --wait` terminó bien en 44 segundos y los servicios quedaron en orden (7 de 7 comprobaciones): `init` terminó con código 0, `postgres`, `engine` y `console` figuran como `healthy` y los tres sitios de práctica están en ejecución.
+- La prueba de humo contra el motor verdadero terminó con «todo en orden» (11 comprobaciones, 10 segundos) y pasaron las 104 pruebas automáticas de la demo.
+- 34 de 34 comprobaciones de seguridad: el motor no sale a internet, solo la consola publica un puerto y solo en `127.0.0.1`, la consola y los sitios de práctica corren sin root y con el sistema de archivos de solo lectura, los servicios propios descartan las capacidades de Linux y usan `no-new-privileges`, y la red `lab` es `internal`.
+- Un recorrido con Chrome (10 de 10 comprobaciones): los seis pasos de la tabla de arriba, con `2 altos, 1 medio, 5 bajos` en el primer escaneo y `1 bajo` después de apagar el servidor de pruebas; sin desbordes en ancho de celular ni errores en la consola del navegador.
+
+**Lo que todavía no se verificó:** `docker compose up --build` en Docker Desktop (Windows y macOS). Es lo que cubre la prueba de aceptación de arriba.
